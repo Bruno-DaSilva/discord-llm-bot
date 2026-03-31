@@ -9,3 +9,4 @@ htmlcov/
 dist/
 *.egg-info/
 .claude/settings.local.json
+.ruff_cache/
