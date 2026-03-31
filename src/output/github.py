@@ -1,4 +1,8 @@
+import logging
+
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 async def create_issue(
@@ -9,6 +13,7 @@ async def create_issue(
     body: str,
     token: str,
 ) -> str:
+    logger.info("Creating issue on %s/%s", owner, repo)
     response = await client.post(
         f"https://api.github.com/repos/{owner}/{repo}/issues",
         json={"title": title, "body": body},
@@ -18,4 +23,6 @@ async def create_issue(
         },
     )
     response.raise_for_status()
-    return response.json()["html_url"]
+    url = response.json()["html_url"]
+    logger.info("Issue created: %s", url)
+    return url

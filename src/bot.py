@@ -1,9 +1,12 @@
+import logging
 import os
 
 import discord
 from discord.ext import commands
 
 from src.cogs.create_issue import CreateIssueCog
+
+logger = logging.getLogger(__name__)
 
 
 class IssueBot(commands.Bot):
@@ -22,7 +25,11 @@ class IssueBot(commands.Bot):
             github_token=self.github_token,
         )
         await self.add_cog(cog)
+        logger.info("CreateIssueCog loaded")
+
+        logger.info("Syncing command tree")
         await self.tree.sync()
+        logger.info("Command tree synced")
 
 
 def create_bot(gemini_api_key: str, github_token: str) -> IssueBot:
@@ -38,6 +45,10 @@ def create_bot(gemini_api_key: str, github_token: str) -> IssueBot:
 
 
 if __name__ == "__main__":
+    from src.logging_config import setup_logging
+
+    setup_logging()
+
     bot = create_bot(
         gemini_api_key=os.environ["GEMINI_API_KEY"],
         github_token=os.environ["GITHUB_TOKEN"],

@@ -1,3 +1,6 @@
+import logging
+import time
+
 import discord
 from discord import app_commands
 from discord.errors import NotFound
@@ -6,6 +9,8 @@ from discord.ext import commands
 from src.models import PipelineData
 from src.output.discord import fetch_messages
 from src.transform.gemini import generate_issue
+
+logger = logging.getLogger(__name__)
 
 
 class CreateIssueCog(commands.Cog):
@@ -39,12 +44,22 @@ class CreateIssueCog(commands.Cog):
         topic: str,
         n: int,
     ):
+        t0 = time.monotonic()
+        logger.info("create-issue invoked: repo=%s topic=%r n=%d", repo, topic, n)
+
         try:
             await interaction.response.defer()
         except NotFound:
+            elapsed = (time.monotonic() - t0) * 1000
+            logger.warning("Interaction expired before defer (%.0fms)", elapsed)
             return
 
+        elapsed = (time.monotonic() - t0) * 1000
+        logger.info("Deferred interaction (%.0fms)", elapsed)
+
+        logger.debug("Fetching %d messages", n)
         messages = await fetch_messages(interaction.channel, limit=n)
+        logger.debug("Fetched %d messages (%.0fms)", len(messages), (time.monotonic() - t0) * 1000)
 
         data = PipelineData(
             context={"messages": messages},
@@ -64,6 +79,7 @@ class CreateIssueCog(commands.Cog):
         await interaction.edit_original_response(
             content=result.input, view=view
         )
+        logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
 
 
 class IssuePreviewView(discord.ui.View):
@@ -83,6 +99,7 @@ class IssuePreviewView(discord.ui.View):
         from src.output.github import create_issue
         import httpx
 
+        logger.info("Create button pressed: %s/%s", self.owner, self.repo)
         async with httpx.AsyncClient() as client:
             lines = self.issue_body.strip().split("\n", 1)
             title = lines[0].lstrip("# ").strip()
@@ -105,6 +122,7 @@ class IssuePreviewView(discord.ui.View):
     async def cancel_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        logger.info("Cancel button pressed")
         await interaction.response.edit_message(
             content="Issue creation cancelled.", view=None
         )
