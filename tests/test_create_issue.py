@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 from discord.ext import commands
 
 import pytest
@@ -120,3 +121,16 @@ class TestCreateIssueCog:
         call_kwargs = interaction.edit_original_response.call_args.kwargs
         assert "issue body" in call_kwargs.get("content", "")
         assert call_kwargs.get("view") is not None
+
+    @pytest.mark.asyncio
+    async def test_expired_interaction_is_ignored(self, cog):
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+        interaction.response.defer.side_effect = discord.NotFound(
+            MagicMock(status=404), {"code": 10062, "message": "Unknown interaction"}
+        )
+
+        # Should not raise
+        await cog._do_create_issue(
+            interaction, repo="owner/repo", topic="bug", n=5
+        )

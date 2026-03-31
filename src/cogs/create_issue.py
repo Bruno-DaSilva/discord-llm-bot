@@ -1,5 +1,6 @@
 import discord
 from discord import app_commands
+from discord.errors import NotFound
 from discord.ext import commands
 
 from src.models import PipelineData
@@ -38,7 +39,10 @@ class CreateIssueCog(commands.Cog):
         topic: str,
         n: int,
     ):
-        await interaction.response.defer()
+        try:
+            await interaction.response.defer()
+        except NotFound:
+            return
 
         messages = await fetch_messages(interaction.channel, limit=n)
 

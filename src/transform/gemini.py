@@ -11,7 +11,7 @@ async def generate_issue(data: PipelineData, client) -> PipelineData:
     )
     user_prompt = f"Topic: {data.input}\n\nChannel messages:\n{messages_text}"
 
-    response = await client.models.generate_content(
+    response = await client.aio.models.generate_content(
         model="gemini-2.5-flash",
         contents=user_prompt,
         config={

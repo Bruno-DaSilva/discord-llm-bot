@@ -22,6 +22,7 @@ class IssueBot(commands.Bot):
             github_token=self.github_token,
         )
         await self.add_cog(cog)
+        await self.tree.sync()
 
 
 def create_bot(gemini_api_key: str, github_token: str) -> IssueBot:

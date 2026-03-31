@@ -12,8 +12,8 @@ class TestGenerateIssue:
         mock_response = MagicMock()
         mock_response.text = "## Title\nLogin broken\n## Body\nUsers can't log in."
 
-        mock_client = AsyncMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client = MagicMock()
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         input_data = PipelineData(
             context={"messages": ["user1: login is broken", "user2: same here"]},
@@ -32,8 +32,8 @@ class TestGenerateIssue:
         mock_response = MagicMock()
         mock_response.text = "generated content"
 
-        mock_client = AsyncMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client = MagicMock()
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         input_data = PipelineData(
             context={"messages": ["msg1"]},
@@ -50,8 +50,8 @@ class TestGenerateIssue:
         mock_response = MagicMock()
         mock_response.text = "output"
 
-        mock_client = AsyncMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client = MagicMock()
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         input_data = PipelineData(
             context={"messages": ["hello"]},
@@ -60,6 +60,6 @@ class TestGenerateIssue:
 
         await generate_issue(input_data, client=mock_client)
 
-        mock_client.models.generate_content.assert_called_once()
-        call_kwargs = mock_client.models.generate_content.call_args
+        mock_client.aio.models.generate_content.assert_called_once()
+        call_kwargs = mock_client.aio.models.generate_content.call_args
         assert "gemini" in call_kwargs.kwargs.get("model", "").lower()
