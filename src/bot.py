@@ -1,0 +1,44 @@
+import os
+
+import discord
+from discord.ext import commands
+
+from src.cogs.create_issue import CreateIssueCog
+
+
+class IssueBot(commands.Bot):
+    def __init__(self, gemini_api_key: str, github_token: str, **kwargs):
+        self.gemini_api_key = gemini_api_key
+        self.github_token = github_token
+        super().__init__(**kwargs)
+
+    async def setup_hook(self):
+        from google import genai
+
+        gemini_client = genai.Client(api_key=self.gemini_api_key)
+        cog = CreateIssueCog(
+            self,
+            gemini_client=gemini_client,
+            github_token=self.github_token,
+        )
+        await self.add_cog(cog)
+
+
+def create_bot(gemini_api_key: str, github_token: str) -> IssueBot:
+    intents = discord.Intents.default()
+    intents.message_content = True
+
+    return IssueBot(
+        gemini_api_key=gemini_api_key,
+        github_token=github_token,
+        command_prefix="!",
+        intents=intents,
+    )
+
+
+if __name__ == "__main__":
+    bot = create_bot(
+        gemini_api_key=os.environ["GEMINI_API_KEY"],
+        github_token=os.environ["GITHUB_TOKEN"],
+    )
+    bot.run(os.environ["DISCORD_BOT_TOKEN"])
