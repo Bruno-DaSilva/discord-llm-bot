@@ -5,7 +5,8 @@ from discord.ext import commands
 
 import pytest
 
-from src.cogs.create_issue import CreateIssueCog
+from src.cogs.create_issue import CreateIssueCog, IssuePreviewView
+from src.ui import DeleteView
 
 
 @pytest.fixture
@@ -31,42 +32,30 @@ class TestCreateIssueCog:
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages")
     @patch("src.cogs.create_issue.generate_issue")
-    async def test_command_defers_first(
-        self, mock_generate, mock_fetch, cog
-    ):
+    async def test_command_defers_first(self, mock_generate, mock_fetch, cog):
         mock_fetch.return_value = ["user1: msg"]
-        mock_generate.return_value = MagicMock(
-            input="# Title\nBody", context={}
-        )
+        mock_generate.return_value = MagicMock(input="# Title\nBody", context={})
 
         interaction = AsyncMock()
         interaction.response = AsyncMock()
         interaction.channel = MagicMock()
 
-        await cog._do_create_issue(
-            interaction, repo="owner/repo", topic="bug", n=5
-        )
+        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
-        interaction.response.defer.assert_awaited_once()
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True)
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages")
     @patch("src.cogs.create_issue.generate_issue")
-    async def test_command_fetches_messages(
-        self, mock_generate, mock_fetch, cog
-    ):
+    async def test_command_fetches_messages(self, mock_generate, mock_fetch, cog):
         mock_fetch.return_value = ["user1: msg"]
-        mock_generate.return_value = MagicMock(
-            input="# Title\nBody", context={}
-        )
+        mock_generate.return_value = MagicMock(input="# Title\nBody", context={})
 
         interaction = AsyncMock()
         interaction.response = AsyncMock()
         interaction.channel = MagicMock()
 
-        await cog._do_create_issue(
-            interaction, repo="owner/repo", topic="bug", n=5
-        )
+        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
         mock_fetch.assert_awaited_once_with(interaction.channel, limit=5)
 
@@ -77,9 +66,7 @@ class TestCreateIssueCog:
         self, mock_generate, mock_fetch, cog
     ):
         mock_fetch.return_value = ["user1: hello", "user2: world"]
-        mock_generate.return_value = MagicMock(
-            input="generated issue", context={}
-        )
+        mock_generate.return_value = MagicMock(input="generated issue", context={})
 
         interaction = AsyncMock()
         interaction.response = AsyncMock()
@@ -101,24 +88,18 @@ class TestCreateIssueCog:
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages")
     @patch("src.cogs.create_issue.generate_issue")
-    async def test_command_sends_preview(
-        self, mock_generate, mock_fetch, cog
-    ):
+    async def test_command_sends_preview(self, mock_generate, mock_fetch, cog):
         mock_fetch.return_value = ["msg"]
-        mock_generate.return_value = MagicMock(
-            input="issue body", context={}
-        )
+        mock_generate.return_value = MagicMock(input="issue body", context={})
 
         interaction = AsyncMock()
         interaction.response = AsyncMock()
         interaction.channel = MagicMock()
 
-        await cog._do_create_issue(
-            interaction, repo="owner/repo", topic="bug", n=5
-        )
+        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
-        interaction.edit_original_response.assert_awaited_once()
-        call_kwargs = interaction.edit_original_response.call_args.kwargs
+        interaction.followup.send.assert_awaited_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
         assert "issue body" in call_kwargs.get("content", "")
         assert call_kwargs.get("view") is not None
 
@@ -131,6 +112,51 @@ class TestCreateIssueCog:
         )
 
         # Should not raise
-        await cog._do_create_issue(
-            interaction, repo="owner/repo", topic="bug", n=5
+        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
+
+
+class TestIssuePreviewView:
+    def test_preview_view_has_two_buttons(self):
+        view = IssuePreviewView(
+            owner="o", repo="r", issue_body="body", github_token="t"
         )
+        assert len(view.children) == 2
+
+    @pytest.mark.asyncio
+    async def test_create_button_posts_public_message(self):
+        view = IssuePreviewView(
+            owner="o", repo="r", issue_body="# Title\nBody", github_token="t"
+        )
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        create_btn = [
+            c for c in view.children if getattr(c, "label", None) == "Create"
+        ][0]
+        await create_btn.callback(interaction)
+
+        # Ephemeral message updated, buttons removed
+        edit_kwargs = interaction.response.edit_message.call_args.kwargs
+        assert edit_kwargs["view"] is None
+
+        # Public message posted with delete button
+        followup_kwargs = interaction.followup.send.call_args.kwargs
+        assert "https://github.com/o/r/issues" in followup_kwargs["content"]
+        assert isinstance(followup_kwargs["view"], DeleteView)
+        assert followup_kwargs["ephemeral"] is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_button_cleans_up_ephemeral(self):
+        view = IssuePreviewView(
+            owner="o", repo="r", issue_body="body", github_token="t"
+        )
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        cancel_btn = [
+            c for c in view.children if getattr(c, "label", None) == "Cancel"
+        ][0]
+        await cancel_btn.callback(interaction)
+
+        call_kwargs = interaction.response.edit_message.call_args.kwargs
+        assert call_kwargs["view"] is None

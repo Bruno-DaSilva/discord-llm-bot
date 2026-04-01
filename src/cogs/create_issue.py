@@ -9,6 +9,7 @@ from discord.ext import commands
 from src.models import PipelineData
 from src.output.discord import fetch_messages
 from src.transform.gemini import generate_issue
+from src.ui import DeleteView
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class CreateIssueCog(commands.Cog):
         logger.info("create-issue invoked: repo=%s topic=%r n=%d", repo, topic, n)
 
         try:
-            await interaction.response.defer()
+            await interaction.response.defer(ephemeral=True)
         except NotFound:
             elapsed = (time.monotonic() - t0) * 1000
             logger.warning("Interaction expired before defer (%.0fms)", elapsed)
@@ -59,7 +60,11 @@ class CreateIssueCog(commands.Cog):
 
         logger.debug("Fetching %d messages", n)
         messages = await fetch_messages(interaction.channel, limit=n)
-        logger.debug("Fetched %d messages (%.0fms)", len(messages), (time.monotonic() - t0) * 1000)
+        logger.debug(
+            "Fetched %d messages (%.0fms)",
+            len(messages),
+            (time.monotonic() - t0) * 1000,
+        )
 
         data = PipelineData(
             context={"messages": messages},
@@ -76,16 +81,12 @@ class CreateIssueCog(commands.Cog):
             github_token=self.github_token,
         )
 
-        await interaction.edit_original_response(
-            content=result.input, view=view
-        )
+        await interaction.followup.send(content=result.input, view=view)
         logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
 
 
 class IssuePreviewView(discord.ui.View):
-    def __init__(
-        self, owner: str, repo: str, issue_body: str, github_token: str
-    ):
+    def __init__(self, owner: str, repo: str, issue_body: str, github_token: str):
         super().__init__(timeout=900)
         self.owner = owner
         self.repo = repo
@@ -96,26 +97,20 @@ class IssuePreviewView(discord.ui.View):
     async def create_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        from src.output.github import create_issue
-        import httpx
-
         logger.info("Create button pressed: %s/%s", self.owner, self.repo)
-        async with httpx.AsyncClient() as client:
-            lines = self.issue_body.strip().split("\n", 1)
-            title = lines[0].lstrip("# ").strip()
-            body = lines[1].strip() if len(lines) > 1 else ""
 
-            url = await create_issue(
-                client=client,
-                owner=self.owner,
-                repo=self.repo,
-                title=title,
-                body=body,
-                token=self.github_token,
-            )
+        lines = self.issue_body.strip().split("\n", 1)
+        title = lines[0].lstrip("# ").strip()
+
+        # TODO: replace with real GitHub API call
+        url = f"https://github.com/{self.owner}/{self.repo}/issues/NEW"
+        logger.info("Mock issue created: %s (title: %s)", url, title)
 
         await interaction.response.edit_message(
             content=f"Issue created: {url}", view=None
+        )
+        await interaction.followup.send(
+            content=f"Issue created: {url}", view=DeleteView(), ephemeral=False
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
