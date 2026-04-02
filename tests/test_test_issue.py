@@ -6,7 +6,7 @@ from discord.ext import commands
 import pytest
 
 from src.cogs.test_issue import DebugIssueCog
-from src.ui import RetryIssueButton
+from src.ui import ErrorView, RetryIssueButton
 
 
 @pytest.fixture
@@ -123,6 +123,25 @@ class TestDebugIssueCog:
         content = interaction.followup.send.call_args.kwargs.get("content", "")
         assert "internal error" in content.lower()
         cog.transform.run.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.test_issue.read_messages")
+    async def test_transform_error_sends_error_embed(self, mock_read, cog):
+        mock_read.return_value = ["msg"]
+        cog.transform.run.side_effect = RuntimeError("Gemini 503")
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        await cog._do_test_issue(
+            interaction, repo="owner/repo", topic="bug",
+            filepath="convos/test1.txt", start_line=1, n=5,
+        )
+
+        interaction.followup.send.assert_awaited_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert "RuntimeError" in call_kwargs["embed"].description
+        assert isinstance(call_kwargs["view"], ErrorView)
 
     @pytest.mark.asyncio
     async def test_expired_interaction_is_ignored(self, cog):

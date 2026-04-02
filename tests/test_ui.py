@@ -10,7 +10,9 @@ from src.ui import (
     CreateIssueButton,
     DeleteButton,
     DeleteView,
+    ErrorView,
     RetryIssueButton,
+    build_error_embed,
     cache_pipeline_data,
     get_cached_pipeline_data,
 )
@@ -204,6 +206,92 @@ class TestRetryIssueButton:
         call_kwargs = interaction.response.send_message.call_args
         assert "expired" in call_kwargs.args[0].lower()
         assert call_kwargs.kwargs["ephemeral"] is True
+
+class TestBuildErrorEmbed:
+    def test_includes_exception_type(self):
+        embed = build_error_embed(ValueError("bad input"))
+        assert "ValueError" in embed.description
+
+    def test_includes_error_message(self):
+        embed = build_error_embed(ValueError("bad input"))
+        assert "bad input" in embed.description
+
+    def test_has_red_color(self):
+        embed = build_error_embed(RuntimeError("fail"))
+        assert embed.color == discord.Color.red()
+
+    def test_has_title(self):
+        embed = build_error_embed(RuntimeError("fail"))
+        assert embed.title is not None
+
+
+class TestErrorView:
+    def test_has_two_children(self):
+        view = ErrorView(owner="o", repo="r", retry_key="abc")
+        assert len(view.children) == 2
+
+    def test_contains_retry_button(self):
+        view = ErrorView(owner="o", repo="r", retry_key="abc")
+        assert any(isinstance(c, RetryIssueButton) for c in view.children)
+
+    def test_contains_cancel_button(self):
+        view = ErrorView(owner="o", repo="r", retry_key="abc")
+        assert any(isinstance(c, CancelIssueButton) for c in view.children)
+
+    def test_has_no_timeout(self):
+        view = ErrorView(owner="o", repo="r", retry_key="abc")
+        assert view.timeout is None
+
+    def test_is_persistent(self):
+        view = ErrorView(owner="o", repo="r", retry_key="abc")
+        assert view.is_persistent()
+
+
+class TestRetryIssueButtonErrors:
+    @pytest.mark.asyncio
+    async def test_callback_transform_error_shows_error_view(self):
+        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        key = cache_pipeline_data(data)
+
+        btn = RetryIssueButton(owner="o", repo="r", retry_key=key)
+
+        mock_cog = MagicMock()
+        mock_cog.transform = AsyncMock()
+        mock_cog.transform.run.side_effect = RuntimeError("503 Service Unavailable")
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.get_cog.return_value = mock_cog
+
+        await btn.callback(interaction)
+
+        interaction.edit_original_response.assert_awaited_once()
+        call_kwargs = interaction.edit_original_response.call_args.kwargs
+        assert "RuntimeError" in call_kwargs["embed"].description
+        assert isinstance(call_kwargs["view"], ErrorView)
+
+    @pytest.mark.asyncio
+    async def test_callback_transform_error_caches_new_key(self):
+        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        key = cache_pipeline_data(data)
+
+        btn = RetryIssueButton(owner="o", repo="r", retry_key=key)
+
+        mock_cog = MagicMock()
+        mock_cog.transform = AsyncMock()
+        mock_cog.transform.run.side_effect = RuntimeError("fail")
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.get_cog.return_value = mock_cog
+
+        await btn.callback(interaction)
+
+        view = interaction.edit_original_response.call_args.kwargs["view"]
+        retry_btn = [c for c in view.children if isinstance(c, RetryIssueButton)][0]
+        assert retry_btn.retry_key != key
 
     @pytest.mark.asyncio
     async def test_callback_cache_hit_shows_loading_then_result(self):

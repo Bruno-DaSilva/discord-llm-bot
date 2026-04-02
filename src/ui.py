@@ -21,6 +21,15 @@ def get_cached_pipeline_data(key: str) -> PipelineData | None:
     return _retry_cache.get(key)
 
 
+def build_error_embed(error: Exception) -> discord.Embed:
+    error_type = type(error).__name__
+    return discord.Embed(
+        title="Something went wrong",
+        description=f"**{error_type}**: {error}\n\nYou can retry or cancel.",
+        color=discord.Color.red(),
+    )
+
+
 class DeleteButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
@@ -129,9 +138,16 @@ class RetryIssueButton(
         await interaction.response.edit_message(view=loading_view)
 
         cog = interaction.client.get_cog("CreateIssueCog")
-        result = await cog.transform.run(data)
-
         new_key = cache_pipeline_data(data)
+
+        try:
+            result = await cog.transform.run(data)
+        except Exception as exc:
+            logger.exception("Transform failed in retry")
+            embed = build_error_embed(exc)
+            view = ErrorView(owner=self.owner, repo=self.repo, retry_key=new_key)
+            await interaction.edit_original_response(embed=embed, view=view)
+            return
 
         view = IssuePreviewView(
             owner=self.owner, repo=self.repo, retry_key=new_key
@@ -170,3 +186,10 @@ class CancelIssueButton(
         await interaction.response.edit_message(
             content="Issue creation cancelled.", embed=None, view=None
         )
+
+
+class ErrorView(discord.ui.View):
+    def __init__(self, owner: str, repo: str, retry_key: str):
+        super().__init__(timeout=None)
+        self.add_item(RetryIssueButton(owner=owner, repo=repo, retry_key=retry_key))
+        self.add_item(CancelIssueButton(owner=owner, repo=repo))

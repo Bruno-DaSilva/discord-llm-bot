@@ -9,7 +9,7 @@ from discord.ext import commands
 from src.cogs.create_issue import IssuePreviewView
 from src.input.file import read_messages
 from src.models import PipelineData
-from src.ui import cache_pipeline_data
+from src.ui import ErrorView, build_error_embed, cache_pipeline_data
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +94,17 @@ class DebugIssueCog(commands.Cog):
         )
 
         retry_key = cache_pipeline_data(data)
-        result = await self.transform.run(data)
-
         owner, repo_name = repo.split("/", 1)
+
+        try:
+            result = await self.transform.run(data)
+        except Exception as exc:
+            logger.exception("Transform failed in test-issue")
+            embed = build_error_embed(exc)
+            view = ErrorView(owner=owner, repo=repo_name, retry_key=retry_key)
+            await interaction.followup.send(embed=embed, view=view)
+            return
+
         view = IssuePreviewView(owner=owner, repo=repo_name, retry_key=retry_key)
 
         embed = discord.Embed(description=result.input)

@@ -8,7 +8,14 @@ from discord.ext import commands
 
 from src.models import PipelineData
 from src.output.discord import fetch_messages
-from src.ui import CancelIssueButton, CreateIssueButton, RetryIssueButton, cache_pipeline_data
+from src.ui import (
+    CancelIssueButton,
+    CreateIssueButton,
+    ErrorView,
+    RetryIssueButton,
+    build_error_embed,
+    cache_pipeline_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +88,17 @@ class CreateIssueCog(commands.Cog):
         )
 
         retry_key = cache_pipeline_data(data)
-        result = await self.transform.run(data)
-
         owner, repo_name = repo.split("/", 1)
+
+        try:
+            result = await self.transform.run(data)
+        except Exception as exc:
+            logger.exception("Transform failed in create-issue")
+            embed = build_error_embed(exc)
+            view = ErrorView(owner=owner, repo=repo_name, retry_key=retry_key)
+            await interaction.followup.send(embed=embed, view=view)
+            return
+
         view = IssuePreviewView(owner=owner, repo=repo_name, retry_key=retry_key)
 
         embed = discord.Embed(description=result.input)

@@ -121,7 +121,7 @@ Key risk areas include: nondeterministic ordering when userdata is used as a tab
 {{ context.messages }}
 </thread_contextual_messages>
         """
-    model = "gemini-3-pro-preview"
+    model = "gemini-3-flash-preview"
     temperature = 0.3
     max_output_tokens = 8096
 
