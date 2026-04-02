@@ -6,7 +6,7 @@ from discord.ext import commands
 import pytest
 
 from src.cogs.create_issue import CreateIssueCog, IssuePreviewView
-from src.ui import CancelIssueButton, CreateIssueButton
+from src.ui import CancelIssueButton, CreateIssueButton, RetryIssueButton
 
 
 @pytest.fixture
@@ -146,3 +146,26 @@ class TestIssuePreviewView:
     def test_preview_view_is_persistent(self):
         view = IssuePreviewView(owner="o", repo="r")
         assert view.is_persistent()
+
+    def test_preview_view_has_three_children_with_retry_key(self):
+        view = IssuePreviewView(owner="o", repo="r", retry_key="abc123")
+        assert len(view.children) == 3
+
+    def test_preview_view_contains_retry_button(self):
+        view = IssuePreviewView(owner="o", repo="r", retry_key="abc123")
+        assert any(isinstance(c, RetryIssueButton) for c in view.children)
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.fetch_messages")
+    async def test_command_sends_preview_with_retry_button(self, mock_fetch, cog):
+        mock_fetch.return_value = ["msg"]
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+        interaction.channel = MagicMock()
+
+        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
+
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        view = call_kwargs["view"]
+        assert any(isinstance(c, RetryIssueButton) for c in view.children)

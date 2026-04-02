@@ -7,7 +7,7 @@ from discord.ext import commands
 from src.cogs.create_issue import CreateIssueCog
 from src.cogs.test_issue import DebugIssueCog
 from src.transform.gemini import IssueGeneratorTransform
-from src.ui import CancelIssueButton, CreateIssueButton, DeleteView
+from src.ui import CancelIssueButton, CreateIssueButton, DeleteView, RetryIssueButton
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class IssueBot(commands.Bot):
 
     async def setup_hook(self):
         self.add_view(DeleteView())
-        self.add_dynamic_items(CreateIssueButton, CancelIssueButton)
+        self.add_dynamic_items(CreateIssueButton, CancelIssueButton, RetryIssueButton)
 
         from google import genai
 

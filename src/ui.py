@@ -1,9 +1,24 @@
 import logging
 import re
+import uuid
 
 import discord
 
+from src.models import PipelineData
+
 logger = logging.getLogger(__name__)
+
+_retry_cache: dict[str, PipelineData] = {}
+
+
+def cache_pipeline_data(data: PipelineData) -> str:
+    key = uuid.uuid4().hex[:8]
+    _retry_cache[key] = data
+    return key
+
+
+def get_cached_pipeline_data(key: str) -> PipelineData | None:
+    return _retry_cache.get(key)
 
 
 class DeleteButton(discord.ui.Button):
@@ -66,6 +81,61 @@ class CreateIssueButton(
         await interaction.followup.send(
             content=f"Issue created: {url}", view=DeleteView(), ephemeral=False
         )
+
+
+class RetryIssueButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"retry_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
+):
+    def __init__(self, owner: str, repo: str, retry_key: str):
+        self.owner = owner
+        self.repo = repo
+        self.retry_key = retry_key
+        super().__init__(
+            discord.ui.Button(
+                label="Retry",
+                style=discord.ButtonStyle.blurple,
+                custom_id=f"retry_issue:{owner}/{repo}/{retry_key}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match,
+    ):
+        return cls(
+            owner=match["owner"],
+            repo=match["repo"],
+            retry_key=match["key"],
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        data = get_cached_pipeline_data(self.retry_key)
+        if data is None:
+            await interaction.response.send_message(
+                "Session expired. Please run the command again.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer()
+
+        cog = interaction.client.get_cog("CreateIssueCog")
+        result = await cog.transform.run(data)
+
+        new_key = cache_pipeline_data(data)
+
+        from src.cogs.create_issue import IssuePreviewView
+
+        view = IssuePreviewView(
+            owner=self.owner, repo=self.repo, retry_key=new_key
+        )
+
+        embed = discord.Embed(description=result.input)
+        await interaction.edit_original_response(embed=embed, view=view)
 
 
 class CancelIssueButton(

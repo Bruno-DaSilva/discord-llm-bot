@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from src.models import PipelineData
 from src.output.discord import fetch_messages
-from src.ui import CancelIssueButton, CreateIssueButton
+from src.ui import CancelIssueButton, CreateIssueButton, RetryIssueButton, cache_pipeline_data
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +80,11 @@ class CreateIssueCog(commands.Cog):
             input=topic,
         )
 
+        retry_key = cache_pipeline_data(data)
         result = await self.transform.run(data)
 
         owner, repo_name = repo.split("/", 1)
-        view = IssuePreviewView(owner=owner, repo=repo_name)
+        view = IssuePreviewView(owner=owner, repo=repo_name, retry_key=retry_key)
 
         embed = discord.Embed(description=result.input)
         await interaction.followup.send(embed=embed, view=view)
@@ -91,7 +92,9 @@ class CreateIssueCog(commands.Cog):
 
 
 class IssuePreviewView(discord.ui.View):
-    def __init__(self, owner: str, repo: str):
+    def __init__(self, owner: str, repo: str, retry_key: str | None = None):
         super().__init__(timeout=None)
         self.add_item(CreateIssueButton(owner=owner, repo=repo))
         self.add_item(CancelIssueButton(owner=owner, repo=repo))
+        if retry_key is not None:
+            self.add_item(RetryIssueButton(owner=owner, repo=repo, retry_key=retry_key))

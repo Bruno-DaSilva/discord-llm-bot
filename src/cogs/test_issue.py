@@ -9,6 +9,7 @@ from discord.ext import commands
 from src.cogs.create_issue import IssuePreviewView
 from src.input.file import read_messages
 from src.models import PipelineData
+from src.ui import cache_pipeline_data
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +93,11 @@ class DebugIssueCog(commands.Cog):
             input=topic,
         )
 
+        retry_key = cache_pipeline_data(data)
         result = await self.transform.run(data)
 
         owner, repo_name = repo.split("/", 1)
-        view = IssuePreviewView(owner=owner, repo=repo_name)
+        view = IssuePreviewView(owner=owner, repo=repo_name, retry_key=retry_key)
 
         embed = discord.Embed(description=result.input)
         await interaction.followup.send(embed=embed, view=view)

@@ -4,11 +4,15 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from src.models import PipelineData
 from src.ui import (
     CancelIssueButton,
     CreateIssueButton,
     DeleteButton,
     DeleteView,
+    RetryIssueButton,
+    cache_pipeline_data,
+    get_cached_pipeline_data,
 )
 
 
@@ -144,3 +148,86 @@ class TestCancelIssueButton:
         call_kwargs = interaction.response.edit_message.call_args.kwargs
         assert call_kwargs["view"] is None
         assert "cancelled" in call_kwargs["content"].lower()
+
+
+class TestRetryCache:
+    def test_cache_pipeline_data_returns_key(self):
+        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        key = cache_pipeline_data(data)
+        assert isinstance(key, str)
+        assert len(key) == 8
+
+    def test_get_cached_pipeline_data_returns_stored_data(self):
+        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        key = cache_pipeline_data(data)
+        assert get_cached_pipeline_data(key) is data
+
+    def test_get_cached_pipeline_data_returns_none_on_miss(self):
+        assert get_cached_pipeline_data("nonexistent") is None
+
+
+class TestRetryIssueButton:
+    def test_custom_id_encodes_owner_repo_and_key(self):
+        btn = RetryIssueButton(owner="o", repo="r", retry_key="abc123")
+        assert btn.custom_id == "retry_issue:o/r/abc123"
+
+    def test_button_label_is_retry(self):
+        btn = RetryIssueButton(owner="o", repo="r", retry_key="abc123")
+        assert btn.item.label == "Retry"
+
+    def test_button_style_is_blurple(self):
+        btn = RetryIssueButton(owner="o", repo="r", retry_key="abc123")
+        assert btn.item.style == discord.ButtonStyle.blurple
+
+    @pytest.mark.asyncio
+    async def test_from_custom_id_extracts_owner_repo_key(self):
+        match = re.match(
+            r"retry_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
+            "retry_issue:myorg/myrepo/abc123",
+        )
+        interaction = AsyncMock()
+        item = MagicMock()
+        btn = await RetryIssueButton.from_custom_id(interaction, item, match)
+        assert btn.owner == "myorg"
+        assert btn.repo == "myrepo"
+        assert btn.retry_key == "abc123"
+
+    @pytest.mark.asyncio
+    async def test_callback_cache_miss_sends_ephemeral_error(self):
+        btn = RetryIssueButton(owner="o", repo="r", retry_key="missing_key")
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        await btn.callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        call_kwargs = interaction.response.send_message.call_args
+        assert "expired" in call_kwargs.args[0].lower()
+        assert call_kwargs.kwargs["ephemeral"] is True
+
+    @pytest.mark.asyncio
+    async def test_callback_cache_hit_defers_and_reruns_transform(self):
+        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        key = cache_pipeline_data(data)
+
+        btn = RetryIssueButton(owner="o", repo="r", retry_key=key)
+
+        mock_cog = MagicMock()
+        mock_cog.transform = AsyncMock()
+        mock_cog.transform.run.return_value = PipelineData(
+            input="# New Title\nNew body", context={}
+        )
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.get_cog.return_value = mock_cog
+
+        await btn.callback(interaction)
+
+        interaction.response.defer.assert_awaited_once()
+        mock_cog.transform.run.assert_awaited_once_with(data)
+        interaction.edit_original_response.assert_awaited_once()
+        call_kwargs = interaction.edit_original_response.call_args.kwargs
+        assert call_kwargs["embed"].description == "# New Title\nNew body"
+        assert call_kwargs["view"] is not None

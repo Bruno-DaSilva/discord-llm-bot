@@ -6,6 +6,7 @@ from discord.ext import commands
 import pytest
 
 from src.cogs.test_issue import DebugIssueCog
+from src.ui import RetryIssueButton
 
 
 @pytest.fixture
@@ -135,3 +136,20 @@ class TestDebugIssueCog:
             interaction, repo="owner/repo", topic="bug",
             filepath="convos/test1.txt", start_line=1, n=5,
         )
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.test_issue.read_messages")
+    async def test_command_sends_preview_with_retry_button(self, mock_read, cog):
+        mock_read.return_value = ["msg"]
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        await cog._do_test_issue(
+            interaction, repo="owner/repo", topic="bug",
+            filepath="convos/test1.txt", start_line=1, n=5,
+        )
+
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        view = call_kwargs["view"]
+        assert any(isinstance(c, RetryIssueButton) for c in view.children)

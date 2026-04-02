@@ -4,7 +4,7 @@ import discord
 import pytest
 
 from src.bot import create_bot
-from src.ui import CancelIssueButton, CreateIssueButton, DeleteView
+from src.ui import CancelIssueButton, CreateIssueButton, DeleteView, RetryIssueButton
 
 
 class TestCreateBot:
@@ -64,5 +64,5 @@ class TestCreateBot:
         ):
             await bot.setup_hook()
             mock_add_dynamic.assert_called_once_with(
-                CreateIssueButton, CancelIssueButton
+                CreateIssueButton, CancelIssueButton, RetryIssueButton
             )

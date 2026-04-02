@@ -120,7 +120,7 @@ class TestIssueGeneratorTransform:
         assert IssueGeneratorTransform.temperature == 0.3
 
     def test_has_correct_max_tokens(self):
-        assert IssueGeneratorTransform.max_output_tokens == 1024
+        assert IssueGeneratorTransform.max_output_tokens == 8096
 
     def test_system_prompt_mentions_ticket(self):
         assert "ticket" in IssueGeneratorTransform.system_prompt.lower()
