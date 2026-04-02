@@ -9,7 +9,7 @@ from discord.ext import commands
 from src.models import PipelineData
 from src.output.discord import fetch_messages
 from src.transform.gemini import generate_issue
-from src.ui import DeleteView
+from src.ui import CancelIssueButton, CreateIssueButton
 
 logger = logging.getLogger(__name__)
 
@@ -74,50 +74,14 @@ class CreateIssueCog(commands.Cog):
         result = await generate_issue(data, client=self.gemini_client)
 
         owner, repo_name = repo.split("/", 1)
-        view = IssuePreviewView(
-            owner=owner,
-            repo=repo_name,
-            issue_body=result.input,
-            github_token=self.github_token,
-        )
+        view = IssuePreviewView(owner=owner, repo=repo_name)
 
         await interaction.followup.send(content=result.input, view=view)
         logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
 
 
 class IssuePreviewView(discord.ui.View):
-    def __init__(self, owner: str, repo: str, issue_body: str, github_token: str):
-        super().__init__(timeout=900)
-        self.owner = owner
-        self.repo = repo
-        self.issue_body = issue_body
-        self.github_token = github_token
-
-    @discord.ui.button(label="Create", style=discord.ButtonStyle.green)
-    async def create_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        logger.info("Create button pressed: %s/%s", self.owner, self.repo)
-
-        lines = self.issue_body.strip().split("\n", 1)
-        title = lines[0].lstrip("# ").strip()
-
-        # TODO: replace with real GitHub API call
-        url = f"https://github.com/{self.owner}/{self.repo}/issues/NEW"
-        logger.info("Mock issue created: %s (title: %s)", url, title)
-
-        await interaction.response.edit_message(
-            content=f"Issue created: {url}", view=None
-        )
-        await interaction.followup.send(
-            content=f"Issue created: {url}", view=DeleteView(), ephemeral=False
-        )
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
-    async def cancel_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        logger.info("Cancel button pressed")
-        await interaction.response.edit_message(
-            content="Issue creation cancelled.", view=None
-        )
+    def __init__(self, owner: str, repo: str):
+        super().__init__(timeout=None)
+        self.add_item(CreateIssueButton(owner=owner, repo=repo))
+        self.add_item(CancelIssueButton(owner=owner, repo=repo))

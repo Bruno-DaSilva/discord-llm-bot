@@ -6,7 +6,7 @@ from discord.ext import commands
 import pytest
 
 from src.cogs.create_issue import CreateIssueCog, IssuePreviewView
-from src.ui import DeleteView
+from src.ui import CancelIssueButton, CreateIssueButton
 
 
 @pytest.fixture
@@ -116,47 +116,22 @@ class TestCreateIssueCog:
 
 
 class TestIssuePreviewView:
-    def test_preview_view_has_two_buttons(self):
-        view = IssuePreviewView(
-            owner="o", repo="r", issue_body="body", github_token="t"
-        )
+    def test_preview_view_has_two_children(self):
+        view = IssuePreviewView(owner="o", repo="r")
         assert len(view.children) == 2
 
-    @pytest.mark.asyncio
-    async def test_create_button_posts_public_message(self):
-        view = IssuePreviewView(
-            owner="o", repo="r", issue_body="# Title\nBody", github_token="t"
-        )
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
+    def test_preview_view_contains_create_button(self):
+        view = IssuePreviewView(owner="o", repo="r")
+        assert any(isinstance(c, CreateIssueButton) for c in view.children)
 
-        create_btn = [
-            c for c in view.children if getattr(c, "label", None) == "Create"
-        ][0]
-        await create_btn.callback(interaction)
+    def test_preview_view_contains_cancel_button(self):
+        view = IssuePreviewView(owner="o", repo="r")
+        assert any(isinstance(c, CancelIssueButton) for c in view.children)
 
-        # Ephemeral message updated, buttons removed
-        edit_kwargs = interaction.response.edit_message.call_args.kwargs
-        assert edit_kwargs["view"] is None
+    def test_preview_view_has_no_timeout(self):
+        view = IssuePreviewView(owner="o", repo="r")
+        assert view.timeout is None
 
-        # Public message posted with delete button
-        followup_kwargs = interaction.followup.send.call_args.kwargs
-        assert "https://github.com/o/r/issues" in followup_kwargs["content"]
-        assert isinstance(followup_kwargs["view"], DeleteView)
-        assert followup_kwargs["ephemeral"] is False
-
-    @pytest.mark.asyncio
-    async def test_cancel_button_cleans_up_ephemeral(self):
-        view = IssuePreviewView(
-            owner="o", repo="r", issue_body="body", github_token="t"
-        )
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-
-        cancel_btn = [
-            c for c in view.children if getattr(c, "label", None) == "Cancel"
-        ][0]
-        await cancel_btn.callback(interaction)
-
-        call_kwargs = interaction.response.edit_message.call_args.kwargs
-        assert call_kwargs["view"] is None
+    def test_preview_view_is_persistent(self):
+        view = IssuePreviewView(owner="o", repo="r")
+        assert view.is_persistent()

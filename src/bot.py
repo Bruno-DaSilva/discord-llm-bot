@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 
 from src.cogs.create_issue import CreateIssueCog
+from src.ui import CancelIssueButton, CreateIssueButton, DeleteView
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,9 @@ class IssueBot(commands.Bot):
         super().__init__(**kwargs)
 
     async def setup_hook(self):
+        self.add_view(DeleteView())
+        self.add_dynamic_items(CreateIssueButton, CancelIssueButton)
+
         from google import genai
 
         gemini_client = genai.Client(api_key=self.gemini_api_key)
