@@ -38,6 +38,6 @@ See `doc/ARCHITECTURE.md` for the full pipeline architecture (three layers: Comm
 
 ## Secrets (via environment variables)
 
-`DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `GEMINI_API_KEY`, `GITHUB_TOKEN`
+`DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `GEMINI_API_KEY`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`, `GITHUB_APP_INSTALLATION_ID`
 
 See `example.env` for template. Pass via `--env-file .env` when running Docker.

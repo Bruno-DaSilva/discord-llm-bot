@@ -23,7 +23,6 @@ def cog(bot):
     return DebugIssueCog(
         bot,
         transform=mock_transform,
-        github_token="ghp_test",
     )
 
 

@@ -1,11 +1,14 @@
 import logging
 import os
+from pathlib import Path
 
 import discord
+import httpx
 from discord.ext import commands
 
 from src.cogs.create_issue import CreateIssueCog
 from src.cogs.test_issue import DebugIssueCog
+from src.output.github_auth import GitHubAppAuth
 from src.transform.gemini import IssueGeneratorTransform
 from src.ui import CancelIssueButton, CreateIssueButton, DeleteView, RetryIssueButton
 
@@ -13,14 +16,32 @@ logger = logging.getLogger(__name__)
 
 
 class IssueBot(commands.Bot):
-    def __init__(self, gemini_api_key: str, github_token: str, **kwargs):
+    def __init__(
+        self,
+        gemini_api_key: str,
+        github_app_id: str,
+        github_private_key_path: str,
+        github_installation_id: str,
+        **kwargs,
+    ):
         self.gemini_api_key = gemini_api_key
-        self.github_token = github_token
+        self._github_app_id = github_app_id
+        self._github_private_key_path = github_private_key_path
+        self._github_installation_id = github_installation_id
         super().__init__(**kwargs)
 
     async def setup_hook(self):
         self.add_view(DeleteView())
         self.add_dynamic_items(CreateIssueButton, CancelIssueButton, RetryIssueButton)
+
+        self.http_client = httpx.AsyncClient()
+        private_key_pem = Path(self._github_private_key_path).read_text()
+        self.github_auth = GitHubAppAuth(
+            app_id=self._github_app_id,
+            private_key_pem=private_key_pem,
+            installation_id=self._github_installation_id,
+            client=self.http_client,
+        )
 
         from google import genai
 
@@ -30,7 +51,6 @@ class IssueBot(commands.Bot):
         cog = CreateIssueCog(
             self,
             transform=transform,
-            github_token=self.github_token,
         )
         await self.add_cog(cog)
         logger.info("CreateIssueCog loaded")
@@ -38,7 +58,6 @@ class IssueBot(commands.Bot):
         debug_cog = DebugIssueCog(
             self,
             transform=transform,
-            github_token=self.github_token,
         )
         await self.add_cog(debug_cog)
         logger.info("DebugIssueCog loaded")
@@ -48,13 +67,20 @@ class IssueBot(commands.Bot):
         logger.info("Command tree synced")
 
 
-def create_bot(gemini_api_key: str, github_token: str) -> IssueBot:
+def create_bot(
+    gemini_api_key: str,
+    github_app_id: str,
+    github_private_key_path: str,
+    github_installation_id: str,
+) -> IssueBot:
     intents = discord.Intents.default()
     intents.message_content = True
 
     return IssueBot(
         gemini_api_key=gemini_api_key,
-        github_token=github_token,
+        github_app_id=github_app_id,
+        github_private_key_path=github_private_key_path,
+        github_installation_id=github_installation_id,
         command_prefix="!",
         intents=intents,
     )
@@ -67,6 +93,8 @@ if __name__ == "__main__":
 
     bot = create_bot(
         gemini_api_key=os.environ["GEMINI_API_KEY"],
-        github_token=os.environ["GITHUB_TOKEN"],
+        github_app_id=os.environ["GITHUB_APP_ID"],
+        github_private_key_path=os.environ["GITHUB_APP_PRIVATE_KEY_PATH"],
+        github_installation_id=os.environ["GITHUB_APP_INSTALLATION_ID"],
     )
     bot.run(os.environ["DISCORD_BOT_TOKEN"])

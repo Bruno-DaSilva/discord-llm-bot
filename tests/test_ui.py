@@ -1,10 +1,10 @@
 import re
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-from src.models import PipelineData
+from src.models import CachedIssueData, IssueMetadata, PipelineData
 from src.ui import (
     CancelIssueButton,
     CreateIssueButton,
@@ -67,51 +67,81 @@ class TestDeleteView:
 
 
 class TestCreateIssueButton:
-    def test_custom_id_encodes_owner_and_repo(self):
-        btn = CreateIssueButton(owner="myorg", repo="myrepo")
-        assert btn.custom_id == "create_issue:myorg/myrepo"
+    def test_custom_id_encodes_owner_repo_and_key(self):
+        btn = CreateIssueButton(owner="myorg", repo="myrepo", cache_key="abc1")
+        assert btn.custom_id == "create_issue:myorg/myrepo/abc1"
 
     def test_button_label_is_create(self):
-        btn = CreateIssueButton(owner="o", repo="r")
+        btn = CreateIssueButton(owner="o", repo="r", cache_key="k")
         assert btn.item.label == "Create"
 
     def test_button_style_is_green(self):
-        btn = CreateIssueButton(owner="o", repo="r")
+        btn = CreateIssueButton(owner="o", repo="r", cache_key="k")
         assert btn.item.style == discord.ButtonStyle.green
 
     @pytest.mark.asyncio
-    async def test_from_custom_id_extracts_owner_repo(self):
+    async def test_from_custom_id_extracts_owner_repo_key(self):
         match = re.match(
-            r"create_issue:(?P<owner>[^/]+)/(?P<repo>.+)",
-            "create_issue:myorg/myrepo",
+            r"create_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
+            "create_issue:myorg/myrepo/abc1",
         )
         interaction = AsyncMock()
         item = MagicMock()
         btn = await CreateIssueButton.from_custom_id(interaction, item, match)
         assert btn.owner == "myorg"
         assert btn.repo == "myrepo"
+        assert btn.cache_key == "abc1"
 
     @pytest.mark.asyncio
-    async def test_callback_creates_issue_and_sends_delete_view(self):
-        btn = CreateIssueButton(owner="o", repo="r")
+    async def test_callback_cache_miss_sends_expired(self):
+        btn = CreateIssueButton(owner="o", repo="r", cache_key="missing")
         interaction = AsyncMock()
-        interaction.message = MagicMock()
-        interaction.message.content = "# Title\nBody text"
-        interaction.client = MagicMock()
-        interaction.client.github_token = "ghp_test"
         interaction.response = AsyncMock()
 
         await btn.callback(interaction)
 
+        interaction.response.send_message.assert_awaited_once()
+        assert "expired" in interaction.response.send_message.call_args.args[0].lower()
+
+    @pytest.mark.asyncio
+    @patch("src.output.github.create_issue", new_callable=AsyncMock)
+    async def test_callback_creates_issue_and_sends_delete_view(self, mock_create):
+        mock_create.return_value = "https://github.com/o/r/issues/42"
+
+        cached = _make_cached(author="alice", link="https://discord.com/channels/1/2/3")
+        key = cache_pipeline_data(cached)
+
+        btn = CreateIssueButton(owner="o", repo="r", cache_key=key)
+
+        embed = MagicMock()
+        embed.description = "# Title\nBody text"
+
+        interaction = AsyncMock()
+        interaction.message = MagicMock()
+        interaction.message.embeds = [embed]
+        interaction.client = MagicMock()
+        interaction.client.github_auth = AsyncMock()
+        interaction.client.github_auth.get_token = AsyncMock(return_value="ghs_tok")
+        interaction.client.http_client = MagicMock()
+        interaction.response = AsyncMock()
+
+        await btn.callback(interaction)
+
+        mock_create.assert_awaited_once()
+        call_kwargs = mock_create.call_args
+        assert call_kwargs.args[1] == "o"
+        assert call_kwargs.args[2] == "r"
+        assert "Author: alice" in call_kwargs.args[4]
+        assert "discord.com/channels/1/2/3" in call_kwargs.args[4]
+
         interaction.response.edit_message.assert_awaited_once()
         edit_kwargs = interaction.response.edit_message.call_args.kwargs
         assert edit_kwargs["view"] is None
-        assert "https://github.com/o/r/issues" in edit_kwargs["content"]
+        assert "issues/42" in edit_kwargs["content"]
 
-        interaction.followup.send.assert_awaited_once()
-        followup_kwargs = interaction.followup.send.call_args.kwargs
-        assert isinstance(followup_kwargs["view"], DeleteView)
-        assert followup_kwargs["ephemeral"] is False
+        interaction.channel.send.assert_awaited_once()
+        channel_kwargs = interaction.channel.send.call_args.kwargs
+        assert isinstance(channel_kwargs["view"], DeleteView)
 
 
 class TestCancelIssueButton:
@@ -152,15 +182,21 @@ class TestCancelIssueButton:
         assert "cancelled" in call_kwargs["content"].lower()
 
 
+def _make_cached(input="topic", messages=None, author="tester", link=None):
+    pipeline = PipelineData(input=input, context={"messages": messages or ["msg"]})
+    metadata = IssueMetadata(author_username=author, latest_message_link=link)
+    return CachedIssueData(pipeline_data=pipeline, metadata=metadata)
+
+
 class TestRetryCache:
     def test_cache_pipeline_data_returns_key(self):
-        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        data = _make_cached()
         key = cache_pipeline_data(data)
         assert isinstance(key, str)
         assert len(key) == 8
 
     def test_get_cached_pipeline_data_returns_stored_data(self):
-        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        data = _make_cached()
         key = cache_pipeline_data(data)
         assert get_cached_pipeline_data(key) is data
 
@@ -250,8 +286,8 @@ class TestErrorView:
 class TestRetryIssueButtonErrors:
     @pytest.mark.asyncio
     async def test_callback_transform_error_shows_error_view(self):
-        data = PipelineData(input="topic", context={"messages": ["msg"]})
-        key = cache_pipeline_data(data)
+        cached = _make_cached()
+        key = cache_pipeline_data(cached)
 
         btn = RetryIssueButton(owner="o", repo="r", retry_key=key)
 
@@ -273,8 +309,8 @@ class TestRetryIssueButtonErrors:
 
     @pytest.mark.asyncio
     async def test_callback_transform_error_caches_new_key(self):
-        data = PipelineData(input="topic", context={"messages": ["msg"]})
-        key = cache_pipeline_data(data)
+        cached = _make_cached()
+        key = cache_pipeline_data(cached)
 
         btn = RetryIssueButton(owner="o", repo="r", retry_key=key)
 
@@ -295,8 +331,8 @@ class TestRetryIssueButtonErrors:
 
     @pytest.mark.asyncio
     async def test_callback_cache_hit_shows_loading_then_result(self):
-        data = PipelineData(input="topic", context={"messages": ["msg"]})
-        key = cache_pipeline_data(data)
+        cached = _make_cached()
+        key = cache_pipeline_data(cached)
 
         btn = RetryIssueButton(owner="o", repo="r", retry_key=key)
 
@@ -320,7 +356,7 @@ class TestRetryIssueButtonErrors:
         assert loading_view.children[0].disabled is True
 
         # Then replaces with result
-        mock_cog.transform.run.assert_awaited_once_with(data)
+        mock_cog.transform.run.assert_awaited_once_with(cached.pipeline_data)
         interaction.edit_original_response.assert_awaited_once()
         call_kwargs = interaction.edit_original_response.call_args.kwargs
         assert call_kwargs["embed"].description == "# New Title\nNew body"

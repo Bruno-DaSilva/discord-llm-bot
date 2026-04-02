@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from src.output.github import create_issue
+from src.output.github import append_footer, create_issue
 
 
 class TestCreateIssue:
@@ -58,3 +58,29 @@ class TestCreateIssue:
                 body="b",
                 token="tok",
             )
+
+
+class TestAppendFooter:
+    def test_adds_author(self):
+        result = append_footer("Issue body", author="alice", message_link=None)
+        assert "Author: alice" in result
+
+    def test_adds_message_link(self):
+        result = append_footer(
+            "Issue body",
+            author="alice",
+            message_link="https://discord.com/channels/1/2/3",
+        )
+        assert "Discord: https://discord.com/channels/1/2/3" in result
+
+    def test_omits_link_when_none(self):
+        result = append_footer("Issue body", author="alice", message_link=None)
+        assert "Discord:" not in result
+
+    def test_separator_format(self):
+        result = append_footer("Issue body", author="alice", message_link=None)
+        assert "\n\n------\n" in result
+
+    def test_preserves_original_body(self):
+        result = append_footer("Original content here", author="bob", message_link=None)
+        assert result.startswith("Original content here")

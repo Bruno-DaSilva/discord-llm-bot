@@ -1,4 +1,27 @@
-from src.models import PipelineData
+from src.models import CachedIssueData, IssueMetadata, PipelineData
+
+
+class TestIssueMetadata:
+    def test_construct_with_all_fields(self):
+        meta = IssueMetadata(
+            author_username="alice",
+            latest_message_link="https://discord.com/channels/1/2/3",
+        )
+        assert meta.author_username == "alice"
+        assert meta.latest_message_link == "https://discord.com/channels/1/2/3"
+
+    def test_link_can_be_none(self):
+        meta = IssueMetadata(author_username="bob", latest_message_link=None)
+        assert meta.latest_message_link is None
+
+
+class TestCachedIssueData:
+    def test_construct_with_pipeline_and_metadata(self):
+        pipeline = PipelineData(input="topic", context={"messages": ["msg"]})
+        meta = IssueMetadata(author_username="alice", latest_message_link=None)
+        cached = CachedIssueData(pipeline_data=pipeline, metadata=meta)
+        assert cached.pipeline_data is pipeline
+        assert cached.metadata is meta
 
 
 class TestPipelineData:

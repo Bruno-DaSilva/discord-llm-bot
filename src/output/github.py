@@ -26,3 +26,10 @@ async def create_issue(
     url = response.json()["html_url"]
     logger.info("Issue created: %s", url)
     return url
+
+
+def append_footer(body: str, author: str, message_link: str | None) -> str:
+    footer = f"\n\n------\nAuthor: {author}"
+    if message_link:
+        footer += f"\nDiscord: {message_link}"
+    return body + footer

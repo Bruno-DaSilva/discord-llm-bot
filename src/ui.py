@@ -4,20 +4,20 @@ import uuid
 
 import discord
 
-from src.models import PipelineData
+from src.models import CachedIssueData
 
 logger = logging.getLogger(__name__)
 
-_retry_cache: dict[str, PipelineData] = {}
+_retry_cache: dict[str, CachedIssueData] = {}
 
 
-def cache_pipeline_data(data: PipelineData) -> str:
+def cache_pipeline_data(data: CachedIssueData) -> str:
     key = uuid.uuid4().hex[:8]
     _retry_cache[key] = data
     return key
 
 
-def get_cached_pipeline_data(key: str) -> PipelineData | None:
+def get_cached_pipeline_data(key: str) -> CachedIssueData | None:
     return _retry_cache.get(key)
 
 
@@ -51,16 +51,17 @@ class DeleteView(discord.ui.View):
 
 class CreateIssueButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"create_issue:(?P<owner>[^/]+)/(?P<repo>.+)",
+    template=r"create_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
 ):
-    def __init__(self, owner: str, repo: str):
+    def __init__(self, owner: str, repo: str, cache_key: str):
         self.owner = owner
         self.repo = repo
+        self.cache_key = cache_key
         super().__init__(
             discord.ui.Button(
                 label="Create",
                 style=discord.ButtonStyle.green,
-                custom_id=f"create_issue:{owner}/{repo}",
+                custom_id=f"create_issue:{owner}/{repo}/{cache_key}",
             )
         )
 
@@ -71,24 +72,53 @@ class CreateIssueButton(
         item: discord.ui.Button,
         match: re.Match,
     ):
-        return cls(owner=match["owner"], repo=match["repo"])
+        return cls(owner=match["owner"], repo=match["repo"], cache_key=match["key"])
 
     async def callback(self, interaction: discord.Interaction):
         logger.info("Create button pressed: %s/%s", self.owner, self.repo)
 
+        cached = get_cached_pipeline_data(self.cache_key)
+        if cached is None:
+            await interaction.response.send_message(
+                "Session expired. Please run the command again.",
+                ephemeral=True,
+            )
+            return
+
         issue_body = interaction.message.embeds[0].description
         lines = issue_body.strip().split("\n", 1)
         title = lines[0].lstrip("# ").strip()
+        body = lines[1].strip() if len(lines) > 1 else ""
 
-        # TODO: replace with real GitHub API call
-        url = f"https://github.com/{self.owner}/{self.repo}/issues/NEW"
-        logger.info("Mock issue created: %s (title: %s)", url, title)
+        from src.output.github import append_footer, create_issue
+
+        body = append_footer(
+            body, cached.metadata.author_username, cached.metadata.latest_message_link
+        )
+
+        try:
+            token = await interaction.client.github_auth.get_token()
+            url = await create_issue(
+                interaction.client.http_client,
+                self.owner,
+                self.repo,
+                title,
+                body,
+                token,
+            )
+        except Exception:
+            logger.exception("Failed to create issue on GitHub")
+            await interaction.response.send_message(
+                "Failed to create issue on GitHub. Please try again.",
+                ephemeral=True,
+            )
+            return
 
         await interaction.response.edit_message(
             content=f"Issue created: {url}", view=None
         )
-        await interaction.followup.send(
-            content=f"Issue created: {url}", view=DeleteView(), ephemeral=False
+        await interaction.channel.send(
+            content=f"Issue created: {url}", view=DeleteView()
         )
 
 
@@ -141,7 +171,7 @@ class RetryIssueButton(
         new_key = cache_pipeline_data(data)
 
         try:
-            result = await cog.transform.run(data)
+            result = await cog.transform.run(data.pipeline_data)
         except Exception as exc:
             logger.exception("Transform failed in retry")
             embed = build_error_embed(exc)
@@ -150,7 +180,7 @@ class RetryIssueButton(
             return
 
         view = IssuePreviewView(
-            owner=self.owner, repo=self.repo, retry_key=new_key
+            owner=self.owner, repo=self.repo, cache_key=new_key
         )
 
         embed = discord.Embed(description=result.input)

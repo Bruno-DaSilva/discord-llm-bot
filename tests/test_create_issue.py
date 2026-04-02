@@ -6,6 +6,7 @@ from discord.ext import commands
 import pytest
 
 from src.cogs.create_issue import CreateIssueCog, IssuePreviewView
+from src.output.discord import FetchResult
 from src.ui import CancelIssueButton, CreateIssueButton, ErrorView, RetryIssueButton
 
 
@@ -23,7 +24,6 @@ def cog(bot):
     return CreateIssueCog(
         bot,
         transform=mock_transform,
-        github_token="ghp_test",
     )
 
 
@@ -31,42 +31,49 @@ class TestCreateIssueCog:
     def test_cog_instantiation(self, cog, bot):
         assert cog.bot is bot
 
-    @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages")
-    async def test_command_defers_first(self, mock_fetch, cog):
-        mock_fetch.return_value = ["user1: msg"]
+    def _mock_fetch_result(self, messages=None, link="https://discord.com/channels/1/2/3"):
+        return FetchResult(
+            messages=messages or ["user1: msg"],
+            latest_message_link=link,
+        )
 
+    def _mock_interaction(self):
         interaction = AsyncMock()
         interaction.response = AsyncMock()
         interaction.channel = MagicMock()
+        interaction.user = MagicMock()
+        interaction.user.display_name = "TestUser"
+        return interaction
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
+    async def test_command_defers_first(self, mock_fetch, cog):
+        mock_fetch.return_value = self._mock_fetch_result()
+        interaction = self._mock_interaction()
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages")
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_command_fetches_messages(self, mock_fetch, cog):
-        mock_fetch.return_value = ["user1: msg"]
-
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        interaction.channel = MagicMock()
+        mock_fetch.return_value = self._mock_fetch_result()
+        interaction = self._mock_interaction()
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
         mock_fetch.assert_awaited_once_with(interaction.channel, limit=5)
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages")
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_command_calls_transform_with_pipeline_data(
         self, mock_fetch, cog
     ):
-        mock_fetch.return_value = ["user1: hello", "user2: world"]
-
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        interaction.channel = MagicMock()
+        mock_fetch.return_value = self._mock_fetch_result(
+            messages=["user1: hello", "user2: world"]
+        )
+        interaction = self._mock_interaction()
 
         await cog._do_create_issue(
             interaction, repo="owner/repo", topic="login bug", n=10
@@ -81,13 +88,10 @@ class TestCreateIssueCog:
         ]
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages")
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_command_sends_preview(self, mock_fetch, cog):
-        mock_fetch.return_value = ["msg"]
-
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        interaction.channel = MagicMock()
+        mock_fetch.return_value = self._mock_fetch_result()
+        interaction = self._mock_interaction()
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
@@ -99,25 +103,23 @@ class TestCreateIssueCog:
         assert call_kwargs.get("view") is not None
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages")
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_no_messages_sends_error(self, mock_fetch, cog):
-        mock_fetch.return_value = []
-
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        interaction.channel = MagicMock()
+        mock_fetch.return_value = FetchResult(messages=[], latest_message_link=None)
+        interaction = self._mock_interaction()
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
         interaction.followup.send.assert_awaited_once()
-        content = interaction.followup.send.call_args.kwargs.get("content", "")
+        call_args = interaction.followup.send.call_args
+        content = call_args.kwargs.get("content") or call_args.args[0] if call_args.args else call_args.kwargs.get("content", "")
         assert "internal error" in content.lower()
         cog.transform.run.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages")
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_transform_error_sends_error_embed(self, mock_fetch, cog):
-        mock_fetch.return_value = ["msg"]
+        mock_fetch.return_value = self._mock_fetch_result()
         cog.transform.run.side_effect = RuntimeError("Gemini 503")
 
         interaction = AsyncMock()
@@ -145,32 +147,32 @@ class TestCreateIssueCog:
 
 
 class TestIssuePreviewView:
-    def test_preview_view_has_two_children(self):
-        view = IssuePreviewView(owner="o", repo="r")
-        assert len(view.children) == 2
+    def test_preview_view_has_three_children(self):
+        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
+        assert len(view.children) == 3
 
     def test_preview_view_contains_create_button(self):
-        view = IssuePreviewView(owner="o", repo="r")
+        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
         assert any(isinstance(c, CreateIssueButton) for c in view.children)
 
     def test_preview_view_contains_cancel_button(self):
-        view = IssuePreviewView(owner="o", repo="r")
+        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
         assert any(isinstance(c, CancelIssueButton) for c in view.children)
 
     def test_preview_view_has_no_timeout(self):
-        view = IssuePreviewView(owner="o", repo="r")
+        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
         assert view.timeout is None
 
     def test_preview_view_is_persistent(self):
-        view = IssuePreviewView(owner="o", repo="r")
+        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
         assert view.is_persistent()
 
-    def test_preview_view_has_three_children_with_retry_key(self):
-        view = IssuePreviewView(owner="o", repo="r", retry_key="abc123")
+    def test_preview_view_has_three_children_with_cache_key(self):
+        view = IssuePreviewView(owner="o", repo="r", cache_key="abc123")
         assert len(view.children) == 3
 
     def test_preview_view_contains_retry_button(self):
-        view = IssuePreviewView(owner="o", repo="r", retry_key="abc123")
+        view = IssuePreviewView(owner="o", repo="r", cache_key="abc123")
         assert any(isinstance(c, RetryIssueButton) for c in view.children)
 
     def test_loading_view_has_single_disabled_button(self):
@@ -180,13 +182,17 @@ class TestIssuePreviewView:
         assert "Regenerating" in view.children[0].label
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages")
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_command_sends_preview_with_retry_button(self, mock_fetch, cog):
-        mock_fetch.return_value = ["msg"]
+        mock_fetch.return_value = FetchResult(
+            messages=["msg"], latest_message_link="https://discord.com/channels/1/2/3"
+        )
 
         interaction = AsyncMock()
         interaction.response = AsyncMock()
         interaction.channel = MagicMock()
+        interaction.user = MagicMock()
+        interaction.user.display_name = "TestUser"
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 

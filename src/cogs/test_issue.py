@@ -8,17 +8,16 @@ from discord.ext import commands
 
 from src.cogs.create_issue import IssuePreviewView
 from src.input.file import read_messages
-from src.models import PipelineData
+from src.models import CachedIssueData, IssueMetadata, PipelineData
 from src.ui import ErrorView, build_error_embed, cache_pipeline_data
 
 logger = logging.getLogger(__name__)
 
 
 class DebugIssueCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, transform, github_token: str):
+    def __init__(self, bot: commands.Bot, transform):
         self.bot = bot
         self.transform = transform
-        self.github_token = github_token
 
     @app_commands.command(
         name="test-issue",
@@ -92,8 +91,12 @@ class DebugIssueCog(commands.Cog):
             context={"messages": messages},
             input=topic,
         )
+        metadata = IssueMetadata(
+            author_username=interaction.user.display_name,
+            latest_message_link=None,
+        )
 
-        retry_key = cache_pipeline_data(data)
+        retry_key = cache_pipeline_data(CachedIssueData(pipeline_data=data, metadata=metadata))
         owner, repo_name = repo.split("/", 1)
 
         try:
@@ -105,7 +108,7 @@ class DebugIssueCog(commands.Cog):
             await interaction.followup.send(embed=embed, view=view)
             return
 
-        view = IssuePreviewView(owner=owner, repo=repo_name, retry_key=retry_key)
+        view = IssuePreviewView(owner=owner, repo=repo_name, cache_key=retry_key)
 
         embed = discord.Embed(description=result.input)
         await interaction.followup.send(embed=embed, view=view)
