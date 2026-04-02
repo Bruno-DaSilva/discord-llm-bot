@@ -52,7 +52,7 @@ class CreateIssueButton(
     async def callback(self, interaction: discord.Interaction):
         logger.info("Create button pressed: %s/%s", self.owner, self.repo)
 
-        issue_body = interaction.message.content
+        issue_body = interaction.message.embeds[0].description
         lines = issue_body.strip().split("\n", 1)
         title = lines[0].lstrip("# ").strip()
 
@@ -95,5 +95,5 @@ class CancelIssueButton(
     async def callback(self, interaction: discord.Interaction):
         logger.info("Cancel button pressed")
         await interaction.response.edit_message(
-            content="Issue creation cancelled.", view=None
+            content="Issue creation cancelled.", embed=None, view=None
         )

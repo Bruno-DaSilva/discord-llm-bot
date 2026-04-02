@@ -4,45 +4,53 @@ from src.input.file import read_messages
 
 
 class TestReadMessages:
-    def test_reads_first_n_lines(self, tmp_path):
-        f = tmp_path / "convo.txt"
-        f.write_text("Alice: hello\nBob: world\nCharlie: hey\n")
-
-        result = read_messages(f, start_line=1, count=2)
-
-        assert result == ["Alice: hello", "Bob: world"]
-
-    def test_reads_from_offset(self, tmp_path):
+    def test_reads_n_lines_ending_at_start_line(self, tmp_path):
         f = tmp_path / "convo.txt"
         f.write_text("Alice: one\nBob: two\nCharlie: three\nDave: four\n")
 
         result = read_messages(f, start_line=3, count=2)
 
-        assert result == ["Charlie: three", "Dave: four"]
+        assert result == ["Bob: two", "Charlie: three"]
 
-    def test_count_exceeds_available_lines(self, tmp_path):
-        f = tmp_path / "convo.txt"
-        f.write_text("Alice: one\nBob: two\n")
-
-        result = read_messages(f, start_line=1, count=50)
-
-        assert result == ["Alice: one", "Bob: two"]
-
-    def test_start_line_beyond_file_returns_empty(self, tmp_path):
-        f = tmp_path / "convo.txt"
-        f.write_text("Alice: one\n")
-
-        result = read_messages(f, start_line=100, count=5)
-
-        assert result == []
-
-    def test_start_line_is_one_indexed(self, tmp_path):
+    def test_start_line_1_returns_just_first_line(self, tmp_path):
         f = tmp_path / "convo.txt"
         f.write_text("first\nsecond\nthird\n")
 
-        result = read_messages(f, start_line=1, count=1)
+        result = read_messages(f, start_line=1, count=5)
 
         assert result == ["first"]
+
+    def test_count_exceeds_available_lines_clamps_to_start(self, tmp_path):
+        f = tmp_path / "convo.txt"
+        f.write_text("Alice: one\nBob: two\nCharlie: three\n")
+
+        result = read_messages(f, start_line=3, count=50)
+
+        assert result == ["Alice: one", "Bob: two", "Charlie: three"]
+
+    def test_start_line_beyond_file_clamps_to_end(self, tmp_path):
+        f = tmp_path / "convo.txt"
+        f.write_text("Alice: one\nBob: two\nCharlie: three\n")
+
+        result = read_messages(f, start_line=100, count=5)
+
+        assert result == ["Alice: one", "Bob: two", "Charlie: three"]
+
+    def test_start_line_clamps_with_count(self, tmp_path):
+        f = tmp_path / "convo.txt"
+        f.write_text("a\nb\nc\nd\ne\n")
+
+        result = read_messages(f, start_line=100, count=2)
+
+        assert result == ["d", "e"]
+
+    def test_count_1_returns_single_line(self, tmp_path):
+        f = tmp_path / "convo.txt"
+        f.write_text("first\nsecond\nthird\n")
+
+        result = read_messages(f, start_line=2, count=1)
+
+        assert result == ["second"]
 
     def test_empty_file_returns_empty(self, tmp_path):
         f = tmp_path / "convo.txt"

@@ -8,16 +8,15 @@ from discord.ext import commands
 
 from src.models import PipelineData
 from src.output.discord import fetch_messages
-from src.transform.gemini import generate_issue
 from src.ui import CancelIssueButton, CreateIssueButton
 
 logger = logging.getLogger(__name__)
 
 
 class CreateIssueCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, gemini_client, github_token: str):
+    def __init__(self, bot: commands.Bot, transform, github_token: str):
         self.bot = bot
-        self.gemini_client = gemini_client
+        self.transform = transform
         self.github_token = github_token
 
     @app_commands.command(
@@ -68,17 +67,26 @@ class CreateIssueCog(commands.Cog):
 
         logger.debug("Messages: \n%r\n===", messages)
 
+        if not messages:
+            logger.error("No messages retrieved from channel %s", interaction.channel)
+            await interaction.followup.send(
+                content="Internal error: no messages could be retrieved.",
+                ephemeral=True,
+            )
+            return
+
         data = PipelineData(
             context={"messages": messages},
             input=topic,
         )
 
-        result = await generate_issue(data, client=self.gemini_client)
+        result = await self.transform.run(data)
 
         owner, repo_name = repo.split("/", 1)
         view = IssuePreviewView(owner=owner, repo=repo_name)
 
-        await interaction.followup.send(content=result.input, view=view)
+        embed = discord.Embed(description=result.input)
+        await interaction.followup.send(embed=embed, view=view)
         logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
 
 

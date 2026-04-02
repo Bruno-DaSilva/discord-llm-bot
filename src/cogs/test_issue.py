@@ -9,15 +9,14 @@ from discord.ext import commands
 from src.cogs.create_issue import IssuePreviewView
 from src.input.file import read_messages
 from src.models import PipelineData
-from src.transform.gemini import generate_issue
 
 logger = logging.getLogger(__name__)
 
 
 class DebugIssueCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, gemini_client, github_token: str):
+    def __init__(self, bot: commands.Bot, transform, github_token: str):
         self.bot = bot
-        self.gemini_client = gemini_client
+        self.transform = transform
         self.github_token = github_token
 
     @app_commands.command(
@@ -77,15 +76,27 @@ class DebugIssueCog(commands.Cog):
         messages = read_messages(filepath, start_line=start_line, count=n)
         logger.debug("Read %d messages from %s", len(messages), filepath)
 
+        if not messages:
+            logger.error(
+                "No messages read from %s (start_line=%d, n=%d)",
+                filepath, start_line, n,
+            )
+            await interaction.followup.send(
+                content="Internal error: no messages could be retrieved.",
+                ephemeral=True,
+            )
+            return
+
         data = PipelineData(
             context={"messages": messages},
             input=topic,
         )
 
-        result = await generate_issue(data, client=self.gemini_client)
+        result = await self.transform.run(data)
 
         owner, repo_name = repo.split("/", 1)
         view = IssuePreviewView(owner=owner, repo=repo_name)
 
-        await interaction.followup.send(content=result.input, view=view)
+        embed = discord.Embed(description=result.input)
+        await interaction.followup.send(embed=embed, view=view)
         logger.info("test-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)

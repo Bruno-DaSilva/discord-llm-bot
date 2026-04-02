@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from src.cogs.create_issue import CreateIssueCog
 from src.cogs.test_issue import DebugIssueCog
+from src.transform.gemini import IssueGeneratorTransform
 from src.ui import CancelIssueButton, CreateIssueButton, DeleteView
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,11 @@ class IssueBot(commands.Bot):
         from google import genai
 
         gemini_client = genai.Client(api_key=self.gemini_api_key)
+        transform = IssueGeneratorTransform(client=gemini_client)
+
         cog = CreateIssueCog(
             self,
-            gemini_client=gemini_client,
+            transform=transform,
             github_token=self.github_token,
         )
         await self.add_cog(cog)
@@ -34,7 +37,7 @@ class IssueBot(commands.Bot):
 
         debug_cog = DebugIssueCog(
             self,
-            gemini_client=gemini_client,
+            transform=transform,
             github_token=self.github_token,
         )
         await self.add_cog(debug_cog)

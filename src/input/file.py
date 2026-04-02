@@ -10,4 +10,6 @@ def read_messages(
         raise ValueError(f"count must be >= 1, got {count}")
 
     lines = Path(filepath).read_text().splitlines()
-    return lines[start_line - 1 : start_line - 1 + count]
+    end = min(start_line, len(lines))
+    start = max(end - count, 0)
+    return lines[start:end]
