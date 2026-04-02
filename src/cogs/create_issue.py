@@ -92,9 +92,25 @@ class CreateIssueCog(commands.Cog):
 
 
 class IssuePreviewView(discord.ui.View):
-    def __init__(self, owner: str, repo: str, retry_key: str | None = None):
+    def __init__(
+        self,
+        owner: str,
+        repo: str,
+        retry_key: str | None = None,
+        loading: bool = False,
+    ):
         super().__init__(timeout=None)
-        self.add_item(CreateIssueButton(owner=owner, repo=repo))
-        self.add_item(CancelIssueButton(owner=owner, repo=repo))
-        if retry_key is not None:
-            self.add_item(RetryIssueButton(owner=owner, repo=repo, retry_key=retry_key))
+        if loading:
+            self.add_item(
+                discord.ui.Button(
+                    label="Regenerating\N{HORIZONTAL ELLIPSIS}",
+                    style=discord.ButtonStyle.blurple,
+                    disabled=True,
+                    custom_id="retry_loading",
+                )
+            )
+        else:
+            self.add_item(CreateIssueButton(owner=owner, repo=repo))
+            self.add_item(CancelIssueButton(owner=owner, repo=repo))
+            if retry_key is not None:
+                self.add_item(RetryIssueButton(owner=owner, repo=repo, retry_key=retry_key))

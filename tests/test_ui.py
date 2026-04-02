@@ -206,7 +206,7 @@ class TestRetryIssueButton:
         assert call_kwargs.kwargs["ephemeral"] is True
 
     @pytest.mark.asyncio
-    async def test_callback_cache_hit_defers_and_reruns_transform(self):
+    async def test_callback_cache_hit_shows_loading_then_result(self):
         data = PipelineData(input="topic", context={"messages": ["msg"]})
         key = cache_pipeline_data(data)
 
@@ -225,7 +225,13 @@ class TestRetryIssueButton:
 
         await btn.callback(interaction)
 
-        interaction.response.defer.assert_awaited_once()
+        # Shows loading state first
+        interaction.response.edit_message.assert_awaited_once()
+        loading_view = interaction.response.edit_message.call_args.kwargs["view"]
+        assert len(loading_view.children) == 1
+        assert loading_view.children[0].disabled is True
+
+        # Then replaces with result
         mock_cog.transform.run.assert_awaited_once_with(data)
         interaction.edit_original_response.assert_awaited_once()
         call_kwargs = interaction.edit_original_response.call_args.kwargs

@@ -121,14 +121,17 @@ class RetryIssueButton(
             )
             return
 
-        await interaction.response.defer()
+        from src.cogs.create_issue import IssuePreviewView
+
+        loading_view = IssuePreviewView(
+            owner=self.owner, repo=self.repo, loading=True
+        )
+        await interaction.response.edit_message(view=loading_view)
 
         cog = interaction.client.get_cog("CreateIssueCog")
         result = await cog.transform.run(data)
 
         new_key = cache_pipeline_data(data)
-
-        from src.cogs.create_issue import IssuePreviewView
 
         view = IssuePreviewView(
             owner=self.owner, repo=self.repo, retry_key=new_key

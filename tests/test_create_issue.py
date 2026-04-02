@@ -155,6 +155,12 @@ class TestIssuePreviewView:
         view = IssuePreviewView(owner="o", repo="r", retry_key="abc123")
         assert any(isinstance(c, RetryIssueButton) for c in view.children)
 
+    def test_loading_view_has_single_disabled_button(self):
+        view = IssuePreviewView(owner="o", repo="r", loading=True)
+        assert len(view.children) == 1
+        assert view.children[0].disabled is True
+        assert "Regenerating" in view.children[0].label
+
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages")
     async def test_command_sends_preview_with_retry_button(self, mock_fetch, cog):

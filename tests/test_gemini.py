@@ -114,7 +114,7 @@ class TestIssueGeneratorTransform:
     """Tests for the concrete issue-generation subclass."""
 
     def test_has_correct_model(self):
-        assert IssueGeneratorTransform.model == "gemini-2.5-flash"
+        assert IssueGeneratorTransform.model == "gemini-3-pro-preview"
 
     def test_has_correct_temperature(self):
         assert IssueGeneratorTransform.temperature == 0.3
