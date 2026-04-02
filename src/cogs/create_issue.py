@@ -52,7 +52,7 @@ class CreateIssueCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
         except NotFound:
             elapsed = (time.monotonic() - t0) * 1000
-            logger.warning("Interaction expired before defer (%.0fms)", elapsed)
+            logger.warning("Interaction 404'd. Did it expire? (%.0fms)", elapsed)
             return
 
         elapsed = (time.monotonic() - t0) * 1000
@@ -65,6 +65,8 @@ class CreateIssueCog(commands.Cog):
             len(messages),
             (time.monotonic() - t0) * 1000,
         )
+
+        logger.debug("Messages: \n%r\n===", messages)
 
         data = PipelineData(
             context={"messages": messages},

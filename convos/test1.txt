@@ -1,0 +1,51 @@
+ivand: @Mark Kropf A kind reminder on this one
+Tarnished Knight: @ivand I believe this PR is also ready for the next release after this one https://github.com/beyond-all-reason/RecoilEngine/pull/2874/changes
+PtaQ ⛏ (Community Lead): so I plan to run the multiplayer tests this weekend, should I test 2026.06.03 or you would rather push a newer build and test that?
+Tarnished Knight: @ivand what's the latest RC for the this engine release? (with the latest bug fixes)
+Tarnished Knight:  Once we know that, then we can check whether that is on the test server. If not, then we will have to ask Beherith to update it.
+ivand: Hey
+ivand: https://github.com/beyond-all-reason/RecoilEngine/tree/2026.06.03 but it's a few commits behind master
+ivand: Thanks! Now need to figure out what release and in what branch 🙂
+Mark Kropf: thank you for the ping, just coming back after illness and catching up on all the threads
+ivand: btw @Tarnished Knight check this out https://github.com/RecoilEngine/FlecsOwner, I started it many months ago myself, and bots augmented it with tests / benchmarks and actually with quite a bit of functionallity
+ivand: for the purposes of tests it runs MT / async on Taskflow, but it's signature compatible with our NIH Threadpool
+Tarnished Knight: I get 404 on that link.
+ivand: Sorry fixed
+Tarnished Knight: @ivand with animations in engine, is the whole model updated/rotated or only parts (a bit like just bones for example; though I know we didn't have those until recently.)
+ivand: Not much changed as far as animations. I optimized it a little bit (unsure if 100% correctly), but otherwise if you rotate on your shoulder joint the rest of your arm matrices need to be updated as well (up to the finger level)
+ivand:  Pieces used to serve dual purpose: store geometry and act as bones, this will soon change
+ivand:  Geometry will be transfered to the model level. Pieces will retain volume (for collision), but mostly remain bones 
+Tarnished Knight: I see something called Archetype API, what does that do beyond flecs' prefabs? I couldn't tell from the description.
+Mark Kropf: @ivand I'm running your PR through our arm64 on gcp environment now. I also went and applied my mac fixes (pthread -> uint32_t cast, sdl2 include paths, and type_traits/cstlib includes) and it builds on mac)
+ivand: It doesn't use prefabs, but works with C API of flecs to create an instance of archtype X: Like entity = EntityOwner:Create<ArchType<Speed, Pos, Health>>
+ivand: I changed a ton there, really afraid I borked something as far as sync safety
+Tarnished Knight: So you rotate matrices in sim, and then the renderer will rotate the polygons according to the matrices?
+ivand: Yes, it will be slightly trickier in the modelMesh branch, but overall yes 
+Mark Kropf: I'll have the sync tests on linux arm first, and then get a local run on mac.
+ivand: modelMesh will also enable several bones to affect the vertex at the same time. We have it, but our implementation is fundamentally broken leading to artifacts like that: 2026-02-05_03-29-21.mp4 
+ivand: model mesh handles it natively
+Mark Kropf: @ivand I've got both the linux arm64 on gcp sync testing and the local mac build. No new divergences.
+ivand: Excellent, we will still merge your streflop PR, make a checkpoint release and then merge mine as it's more complete
+Mark Kropf: would it make sense to add the sync testing as a info only stage of the CI run?
+ivand: Yes, I think so, it runs in a second, but we can't run it cross arch, so we can only post hashes or something, hoping someone cares. Actually there could be a way to compare cross platform runs
+Mark Kropf: yeah, it can dump the results in a structured format in a bucket somewhere or in the repo, and then the script can do a compare and fail on regressions
+ivand: ah yeah indeed
+ivand: maybe there're even easier ways, got to ask LLMs
+Mark Kropf: each run appends platform totals into a csv or json blob, script exits with status code when a regression happens. Maybe prune it to last 10 runs per target platform.
+Mark Kropf: each row has the PR / commit hash, contriburtor (for blaming), test a-e results, and date time
+NortySpock: bar game has some integration tests, where the first job writes the results to disk, and the second, separate job reads them and pretty-prints them and marks itself as success or failure 
+NortySpock: So you could feed that into the LLM for context
+NortySpock: Should be in the .GitHub folder
+dudewhat: in github actions you can run on arm64 or amd64 runners in separate jobs within the same github action - then a job that depends_on both of them to complete and compares their outputs
+dudewhat: then you could fail the third job when the checksums differ
+ivand: Yeah, but we can in theory break sync in all platforms at the same time. Probably need golden checksums or something.
+dudewhat: ahhh i see your point
+dudewhat: but i guess theres no way of differentiating a bad change vs a good change. Need the extra context of the developer expected a sync change?
+dudewhat: or should all engine-repo changes expect no sync changes
+ivand: Mostly compilation options, I plan to enable SSE4, last time it failed, but it was like 4 years ago, maybe people upgraded their calculators
+dudewhat: gotcha, which is where we should expect no changes in sync checksums 
+ivand: exactly. The other case would be expansion of the sync tests / changes there 
+ivand: Actually flecs on its own and its API is very tricky. Claude had to inspect its source code multiple times to sort out weird crashes and assertions. Having curated methods like in this repo is quite valuable.
+J_J: I was going to say, any amd64 release in the last 13 years or so supports SSE4. But then I look at my gf's laptop and... it doesn't 😂 That calculator really needs an upgrade.
+ivand: Yes we had similar arguments ~4 years ago
+there were a vocal few who lost their ability to play games on the engine, so we had to revert
