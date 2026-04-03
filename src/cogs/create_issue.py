@@ -24,6 +24,19 @@ class CreateIssueCog(commands.Cog):
     def __init__(self, bot: commands.Bot, transform):
         self.bot = bot
         self.transform = transform
+        self.ctx_menu = app_commands.ContextMenu(
+            name="Create Issue",
+            callback=self.create_issue_context_menu,
+        )
+        self.bot.tree.add_command(self.ctx_menu)
+
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.ctx_menu.name, type=self.ctx_menu.type)
+
+    async def create_issue_context_menu(
+        self, interaction: discord.Interaction, message: discord.Message
+    ):
+        await interaction.response.send_modal(CreateIssueModal(message, cog=self))
 
     @app_commands.command(
         name="create-issue",
@@ -81,13 +94,31 @@ class CreateIssueCog(commands.Cog):
             )
             return
 
+        await self._run_pipeline(
+            interaction,
+            repo=repo,
+            topic=topic,
+            messages=fetch_result.messages,
+            latest_message_link=fetch_result.latest_message_link,
+        )
+        logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
+
+    async def _run_pipeline(
+        self,
+        interaction: discord.Interaction,
+        *,
+        repo: str,
+        topic: str,
+        messages: list[str],
+        latest_message_link: str | None,
+    ):
         data = PipelineData(
-            context={"messages": fetch_result.messages},
+            context={"messages": messages},
             input=topic,
         )
         metadata = IssueMetadata(
             author_username=interaction.user.display_name,
-            latest_message_link=fetch_result.latest_message_link,
+            latest_message_link=latest_message_link,
         )
 
         retry_key = cache_pipeline_data(CachedIssueData(pipeline_data=data, metadata=metadata))
@@ -99,14 +130,71 @@ class CreateIssueCog(commands.Cog):
             logger.exception("Transform failed in create-issue")
             embed = build_error_embed(exc)
             view = ErrorView(owner=owner, repo=repo_name, retry_key=retry_key)
-            await interaction.followup.send(embed=embed, view=view)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             return
 
         view = IssuePreviewView(owner=owner, repo=repo_name, cache_key=retry_key)
 
         embed = discord.Embed(description=result.input)
-        await interaction.followup.send(embed=embed, view=view)
-        logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
+class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
+    repo = discord.ui.TextInput(
+        label="Repository",
+        placeholder="owner/repo",
+        style=discord.TextStyle.short,
+        required=True,
+    )
+    topic = discord.ui.TextInput(
+        label="Topic",
+        placeholder="Brief summary of the issue",
+        style=discord.TextStyle.short,
+        required=True,
+    )
+    n = discord.ui.TextInput(
+        label="Number of messages",
+        placeholder="20",
+        default="20",
+        style=discord.TextStyle.short,
+        required=False,
+    )
+
+    def __init__(self, message: discord.Message, *, cog: "CreateIssueCog"):
+        super().__init__()
+        self.target_message = message
+        self.cog = cog
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        embed = build_error_embed(error)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        n = int(self.n.value or "20")
+        target_formatted = f"{self.target_message.author.display_name}: {self.target_message.content}"
+
+        fetch_result = await fetch_messages_with_metadata(
+            self.target_message.channel, limit=n - 1, before=self.target_message
+        )
+        messages = [target_formatted] + fetch_result.messages
+
+        guild = self.target_message.guild
+        if guild is not None:
+            link = f"https://discord.com/channels/{guild.id}/{self.target_message.channel.id}/{self.target_message.id}"
+        else:
+            link = None
+
+        await self.cog._run_pipeline(
+            interaction,
+            repo=self.repo.value,
+            topic=self.topic.value,
+            messages=messages,
+            latest_message_link=link,
+        )
 
 
 class IssuePreviewView(discord.ui.View):

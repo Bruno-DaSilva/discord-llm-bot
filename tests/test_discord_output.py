@@ -18,7 +18,7 @@ class TestFetchMessages:
 
         channel = MagicMock()
 
-        async def mock_history(limit):
+        async def mock_history(limit, **kwargs):
             for msg in [msg1, msg2]:
                 yield msg
 
@@ -37,7 +37,7 @@ class TestFetchMessages:
 
         messages_yielded = []
 
-        async def mock_history(limit):
+        async def mock_history(limit, **kwargs):
             for i in range(limit):
                 msg = MagicMock()
                 msg.author.display_name = f"user{i}"
@@ -54,7 +54,7 @@ class TestFetchMessages:
     async def test_empty_channel(self):
         channel = MagicMock()
 
-        async def mock_history(limit):
+        async def mock_history(limit, **kwargs):
             return
             yield
 
@@ -80,7 +80,7 @@ class TestFetchMessagesWithMetadata:
         msg2 = self._make_msg("Bob", "world", msg_id=100)
         channel = MagicMock()
 
-        async def mock_history(limit):
+        async def mock_history(limit, **kwargs):
             for m in [msg1, msg2]:
                 yield m
 
@@ -95,7 +95,7 @@ class TestFetchMessagesWithMetadata:
         msg = self._make_msg("Alice", "hi", msg_id=999, guild_id=111, channel_id=222)
         channel = MagicMock()
 
-        async def mock_history(limit):
+        async def mock_history(limit, **kwargs):
             yield msg
 
         channel.history = mock_history
@@ -107,7 +107,7 @@ class TestFetchMessagesWithMetadata:
     async def test_empty_channel_returns_none_link(self):
         channel = MagicMock()
 
-        async def mock_history(limit):
+        async def mock_history(limit, **kwargs):
             return
             yield
 
@@ -116,3 +116,19 @@ class TestFetchMessagesWithMetadata:
         result = await fetch_messages_with_metadata(channel, limit=10)
         assert result.messages == []
         assert result.latest_message_link is None
+
+    @pytest.mark.asyncio
+    async def test_before_anchor_is_passed_to_history(self):
+        msg = self._make_msg("Alice", "hi", msg_id=999)
+        anchor = MagicMock()
+        channel = MagicMock()
+        received_kwargs = {}
+
+        async def mock_history(limit, **kwargs):
+            received_kwargs.update(kwargs)
+            yield msg
+
+        channel.history = mock_history
+
+        await fetch_messages_with_metadata(channel, limit=5, before=anchor)
+        assert received_kwargs.get("before") is anchor

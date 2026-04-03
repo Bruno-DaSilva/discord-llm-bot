@@ -14,11 +14,14 @@ async def fetch_messages(channel, limit: int) -> list[str]:
     return messages
 
 
-async def fetch_messages_with_metadata(channel, limit: int) -> FetchResult:
+async def fetch_messages_with_metadata(channel, limit: int, before=None) -> FetchResult:
     messages = []
     latest_message_link = None
     first = True
-    async for msg in channel.history(limit=limit):
+    kwargs = {"limit": limit}
+    if before is not None:
+        kwargs["before"] = before
+    async for msg in channel.history(**kwargs):
         messages.append(f"{msg.author.display_name}: {msg.content}")
         if first:
             latest_message_link = (
