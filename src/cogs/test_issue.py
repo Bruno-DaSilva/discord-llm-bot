@@ -8,12 +8,13 @@ from discord.ext import commands
 
 from src.cogs.create_issue import run_pipeline
 from src.input.file import read_messages
+from src.transform.protocol import Transform
 
 logger = logging.getLogger(__name__)
 
 
 class DebugIssueCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, transform):
+    def __init__(self, bot: commands.Bot, transform: Transform) -> None:
         self.bot = bot
         self.transform = transform
 
@@ -36,7 +37,7 @@ class DebugIssueCog(commands.Cog):
         filepath: str,
         start_line: int = 1,
         n: int = 20,
-    ):
+    ) -> None:
         await self._do_test_issue(
             interaction,
             repo=repo,
@@ -54,7 +55,7 @@ class DebugIssueCog(commands.Cog):
         filepath: str,
         start_line: int,
         n: int,
-    ):
+    ) -> None:
         t0 = time.monotonic()
         logger.info(
             "test-issue invoked: repo=%s topic=%r filepath=%s start=%d n=%d",

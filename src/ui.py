@@ -2,6 +2,7 @@ import logging
 import re
 import time
 import uuid
+from typing import Self
 
 import discord
 
@@ -48,20 +49,20 @@ def build_error_embed(error: Exception) -> discord.Embed:
 
 
 class DeleteButton(discord.ui.Button):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             style=discord.ButtonStyle.grey,
             emoji="\N{WASTEBASKET}",
             custom_id="delete_issue_msg",
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
         await interaction.message.delete()
 
 
 class DeleteView(discord.ui.View):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(timeout=None)
         self.add_item(DeleteButton())
 
@@ -70,7 +71,7 @@ class CreateIssueButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"create_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
 ):
-    def __init__(self, owner: str, repo: str, cache_key: str):
+    def __init__(self, owner: str, repo: str, cache_key: str) -> None:
         self.owner = owner
         self.repo = repo
         self.cache_key = cache_key
@@ -87,11 +88,11 @@ class CreateIssueButton(
         cls,
         interaction: discord.Interaction,
         item: discord.ui.Button,
-        match: re.Match,
-    ):
+        match: re.Match[str],
+    ) -> Self:
         return cls(owner=match["owner"], repo=match["repo"], cache_key=match["key"])
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         logger.info("Create button pressed: %s/%s", self.owner, self.repo)
 
         cached = get_cached_pipeline_data(self.cache_key)
@@ -143,7 +144,7 @@ class RetryIssueButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"retry_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
 ):
-    def __init__(self, owner: str, repo: str, retry_key: str):
+    def __init__(self, owner: str, repo: str, retry_key: str) -> None:
         self.owner = owner
         self.repo = repo
         self.retry_key = retry_key
@@ -160,15 +161,15 @@ class RetryIssueButton(
         cls,
         interaction: discord.Interaction,
         item: discord.ui.Button,
-        match: re.Match,
-    ):
+        match: re.Match[str],
+    ) -> Self:
         return cls(
             owner=match["owner"],
             repo=match["repo"],
             retry_key=match["key"],
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         data = get_cached_pipeline_data(self.retry_key)
         if data is None:
             await interaction.response.send_message(
@@ -208,7 +209,7 @@ class CancelIssueButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"cancel_issue:(?P<owner>[^/]+)/(?P<repo>.+)",
 ):
-    def __init__(self, owner: str, repo: str):
+    def __init__(self, owner: str, repo: str) -> None:
         self.owner = owner
         self.repo = repo
         super().__init__(
@@ -224,11 +225,11 @@ class CancelIssueButton(
         cls,
         interaction: discord.Interaction,
         item: discord.ui.Button,
-        match: re.Match,
-    ):
+        match: re.Match[str],
+    ) -> Self:
         return cls(owner=match["owner"], repo=match["repo"])
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction) -> None:
         logger.info("Cancel button pressed")
         await interaction.response.edit_message(
             content="Issue creation cancelled.", embed=None, view=None
@@ -236,7 +237,7 @@ class CancelIssueButton(
 
 
 class ErrorView(discord.ui.View):
-    def __init__(self, owner: str, repo: str, retry_key: str):
+    def __init__(self, owner: str, repo: str, retry_key: str) -> None:
         super().__init__(timeout=None)
         self.add_item(RetryIssueButton(owner=owner, repo=repo, retry_key=retry_key))
         self.add_item(CancelIssueButton(owner=owner, repo=repo))

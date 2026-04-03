@@ -2,7 +2,7 @@ import logging.config
 import os
 
 
-def setup_logging():
+def setup_logging() -> None:
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     log_format = os.environ.get("LOG_FORMAT", "text").lower()
 

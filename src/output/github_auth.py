@@ -24,7 +24,7 @@ class GitHubAppAuth:
         private_key_pem: str,
         installation_id: str,
         client: httpx.AsyncClient,
-    ):
+    ) -> None:
         self._app_id = app_id
         self._private_key_pem = private_key_pem
         self._installation_id = installation_id

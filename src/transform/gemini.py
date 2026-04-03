@@ -1,6 +1,8 @@
 import logging
 import time
 
+from google import genai
+
 from src.models import PipelineData
 
 logger = logging.getLogger(__name__)
@@ -25,7 +27,7 @@ class GeminiTransform:
     temperature: float = 0.3
     max_output_tokens: int = 1024
 
-    def __init__(self, client):
+    def __init__(self, client: genai.Client) -> None:
         self.client = client
 
     def build_system_prompt(self, data: PipelineData) -> str:

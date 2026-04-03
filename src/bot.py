@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import discord
 import httpx
@@ -22,15 +23,15 @@ class IssueBot(commands.Bot):
         github_app_id: str,
         github_private_key_path: str,
         github_installation_id: str,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         self.gemini_api_key = gemini_api_key
         self._github_app_id = github_app_id
         self._github_private_key_path = github_private_key_path
         self._github_installation_id = github_installation_id
         super().__init__(**kwargs)
 
-    async def setup_hook(self):
+    async def setup_hook(self) -> None:
         self.add_view(DeleteView())
         self.add_dynamic_items(CreateIssueButton, CancelIssueButton, RetryIssueButton)
 

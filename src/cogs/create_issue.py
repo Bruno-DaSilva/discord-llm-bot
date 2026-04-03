@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from src.models import CachedIssueData, IssueMetadata, PipelineData
 from src.output.discord import fetch_messages_with_metadata
+from src.transform.protocol import Transform
 from src.ui import (
     CancelIssueButton,
     CreateIssueButton,
@@ -23,13 +24,13 @@ logger = logging.getLogger(__name__)
 async def run_pipeline(
     interaction: discord.Interaction,
     *,
-    transform,
+    transform: Transform,
     repo: str,
     topic: str,
     messages: list[str],
     latest_message_link: str | None,
     ephemeral: bool = False,
-):
+) -> None:
     data = PipelineData(
         context={"messages": messages},
         input=topic,
@@ -58,7 +59,7 @@ async def run_pipeline(
 
 
 class CreateIssueCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, transform):
+    def __init__(self, bot: commands.Bot, transform: Transform) -> None:
         self.bot = bot
         self.transform = transform
         self.ctx_menu = app_commands.ContextMenu(
@@ -67,12 +68,12 @@ class CreateIssueCog(commands.Cog):
         )
         self.bot.tree.add_command(self.ctx_menu)
 
-    async def cog_unload(self):
+    async def cog_unload(self) -> None:
         self.bot.tree.remove_command(self.ctx_menu.name, type=self.ctx_menu.type)
 
     async def create_issue_context_menu(
         self, interaction: discord.Interaction, message: discord.Message
-    ):
+    ) -> None:
         await interaction.response.send_modal(CreateIssueModal(message, cog=self))
 
     @app_commands.command(
@@ -90,7 +91,7 @@ class CreateIssueCog(commands.Cog):
         repo: str,
         topic: str,
         n: int = 20,
-    ):
+    ) -> None:
         await self._do_create_issue(interaction, repo=repo, topic=topic, n=n)
 
     async def _do_create_issue(
@@ -99,7 +100,7 @@ class CreateIssueCog(commands.Cog):
         repo: str,
         topic: str,
         n: int,
-    ):
+    ) -> None:
         t0 = time.monotonic()
         logger.info("create-issue invoked: repo=%s topic=%r n=%d", repo, topic, n)
 
@@ -148,7 +149,7 @@ class CreateIssueCog(commands.Cog):
         topic: str,
         messages: list[str],
         latest_message_link: str | None,
-    ):
+    ) -> None:
         await run_pipeline(
             interaction,
             transform=self.transform,
@@ -181,18 +182,18 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
         required=False,
     )
 
-    def __init__(self, message: discord.Message, *, cog: "CreateIssueCog"):
+    def __init__(self, message: discord.Message, *, cog: "CreateIssueCog") -> None:
         super().__init__()
         self.target_message = message
         self.cog = cog
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception):
+    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
         embed = build_error_embed(error)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
         n = int(self.n.value or "20")
@@ -225,7 +226,7 @@ class IssuePreviewView(discord.ui.View):
         repo: str,
         cache_key: str | None = None,
         loading: bool = False,
-    ):
+    ) -> None:
         super().__init__(timeout=None)
         if loading:
             self.add_item(

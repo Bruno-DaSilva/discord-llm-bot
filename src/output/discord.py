@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import discord
+
 
 @dataclass
 class FetchResult:
@@ -7,7 +9,9 @@ class FetchResult:
     latest_message_link: str | None
 
 
-async def fetch_messages_with_metadata(channel, limit: int, before=None) -> FetchResult:
+async def fetch_messages_with_metadata(
+    channel: discord.abc.Messageable, limit: int, before: discord.Message | None = None
+) -> FetchResult:
     messages = []
     latest_message_link = None
     first = True
