@@ -26,6 +26,21 @@ def cog(bot):
     )
 
 
+class TestDebugIssueCogCommand:
+    @pytest.mark.asyncio
+    @patch.object(DebugIssueCog, "_do_test_issue", new_callable=AsyncMock)
+    async def test_command_delegates_to_do_test_issue(self, mock_do, cog):
+        interaction = AsyncMock()
+        await cog.test_issue_command.callback(
+            cog, interaction, repo="owner/repo", topic="bug",
+            filepath="convos/test.txt", start_line=5, n=10,
+        )
+        mock_do.assert_awaited_once_with(
+            interaction, repo="owner/repo", topic="bug",
+            filepath="convos/test.txt", start_line=5, n=10,
+        )
+
+
 class TestDebugIssueCog:
     def test_cog_instantiation(self, cog, bot):
         assert cog.bot is bot

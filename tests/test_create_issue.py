@@ -36,6 +36,19 @@ def _mock_interaction():
     return interaction
 
 
+class TestCreateIssueCogCommand:
+    @pytest.mark.asyncio
+    @patch.object(CreateIssueCog, "_do_create_issue", new_callable=AsyncMock)
+    async def test_command_delegates_to_do_create_issue(self, mock_do, cog):
+        interaction = _mock_interaction()
+        await cog.create_issue_command.callback(
+            cog, interaction, repo="owner/repo", topic="bug", n=10,
+        )
+        mock_do.assert_awaited_once_with(
+            interaction, repo="owner/repo", topic="bug", n=10,
+        )
+
+
 class TestRunPipeline:
     @pytest.mark.asyncio
     async def test_calls_transform_with_pipeline_data(self, cog):

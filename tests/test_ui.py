@@ -144,6 +144,37 @@ class TestCreateIssueButton:
         assert isinstance(channel_kwargs["view"], DeleteView)
 
 
+    @pytest.mark.asyncio
+    @patch("src.output.github.create_issue", new_callable=AsyncMock)
+    async def test_callback_github_failure_sends_ephemeral_error(self, mock_create):
+        mock_create.side_effect = RuntimeError("GitHub API down")
+
+        cached = _make_cached(author="alice", link="https://discord.com/channels/1/2/3")
+        key = cache_pipeline_data(cached)
+
+        btn = CreateIssueButton(owner="o", repo="r", cache_key=key)
+
+        embed = MagicMock()
+        embed.description = "# Title\nBody text"
+
+        interaction = AsyncMock()
+        interaction.message = MagicMock()
+        interaction.message.embeds = [embed]
+        interaction.client = MagicMock()
+        interaction.client.github_auth = AsyncMock()
+        interaction.client.github_auth.get_token = AsyncMock(return_value="ghs_tok")
+        interaction.client.http_client = MagicMock()
+        interaction.response = AsyncMock()
+
+        await btn.callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        args = interaction.response.send_message.call_args
+        assert "failed" in args.args[0].lower()
+        assert args.kwargs["ephemeral"] is True
+        interaction.response.edit_message.assert_not_awaited()
+
+
 class TestCancelIssueButton:
     def test_custom_id_encodes_owner_and_repo(self):
         btn = CancelIssueButton(owner="myorg", repo="myrepo")
