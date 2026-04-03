@@ -20,6 +20,43 @@ from src.ui import (
 logger = logging.getLogger(__name__)
 
 
+async def run_pipeline(
+    interaction: discord.Interaction,
+    *,
+    transform,
+    repo: str,
+    topic: str,
+    messages: list[str],
+    latest_message_link: str | None,
+    ephemeral: bool = False,
+):
+    data = PipelineData(
+        context={"messages": messages},
+        input=topic,
+    )
+    metadata = IssueMetadata(
+        author_username=interaction.user.display_name,
+        latest_message_link=latest_message_link,
+    )
+
+    retry_key = cache_pipeline_data(CachedIssueData(pipeline_data=data, metadata=metadata))
+    owner, repo_name = repo.split("/", 1)
+
+    try:
+        result = await transform.run(data)
+    except Exception as exc:
+        logger.exception("Transform failed")
+        embed = build_error_embed(exc)
+        view = ErrorView(owner=owner, repo=repo_name, retry_key=retry_key)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
+        return
+
+    view = IssuePreviewView(owner=owner, repo=repo_name, cache_key=retry_key)
+
+    embed = discord.Embed(description=result.input)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
+
+
 class CreateIssueCog(commands.Cog):
     def __init__(self, bot: commands.Bot, transform):
         self.bot = bot
@@ -112,31 +149,15 @@ class CreateIssueCog(commands.Cog):
         messages: list[str],
         latest_message_link: str | None,
     ):
-        data = PipelineData(
-            context={"messages": messages},
-            input=topic,
-        )
-        metadata = IssueMetadata(
-            author_username=interaction.user.display_name,
+        await run_pipeline(
+            interaction,
+            transform=self.transform,
+            repo=repo,
+            topic=topic,
+            messages=messages,
             latest_message_link=latest_message_link,
+            ephemeral=True,
         )
-
-        retry_key = cache_pipeline_data(CachedIssueData(pipeline_data=data, metadata=metadata))
-        owner, repo_name = repo.split("/", 1)
-
-        try:
-            result = await self.transform.run(data)
-        except Exception as exc:
-            logger.exception("Transform failed in create-issue")
-            embed = build_error_embed(exc)
-            view = ErrorView(owner=owner, repo=repo_name, retry_key=retry_key)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            return
-
-        view = IssuePreviewView(owner=owner, repo=repo_name, cache_key=retry_key)
-
-        embed = discord.Embed(description=result.input)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
 class CreateIssueModal(discord.ui.Modal, title="Create Issue"):

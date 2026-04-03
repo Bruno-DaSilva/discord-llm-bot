@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 import uuid
 
 import discord
@@ -8,17 +9,33 @@ from src.models import CachedIssueData
 
 logger = logging.getLogger(__name__)
 
-_retry_cache: dict[str, CachedIssueData] = {}
+_CACHE_TTL = 3600  # 1 hour
+_retry_cache: dict[str, tuple[float, CachedIssueData]] = {}
+
+
+def _evict_expired() -> None:
+    now = time.monotonic()
+    expired = [k for k, (ts, _) in _retry_cache.items() if now - ts > _CACHE_TTL]
+    for k in expired:
+        del _retry_cache[k]
 
 
 def cache_pipeline_data(data: CachedIssueData) -> str:
+    _evict_expired()
     key = uuid.uuid4().hex[:8]
-    _retry_cache[key] = data
+    _retry_cache[key] = (time.monotonic(), data)
     return key
 
 
 def get_cached_pipeline_data(key: str) -> CachedIssueData | None:
-    return _retry_cache.get(key)
+    entry = _retry_cache.get(key)
+    if entry is None:
+        return None
+    ts, data = entry
+    if time.monotonic() - ts > _CACHE_TTL:
+        del _retry_cache[key]
+        return None
+    return data
 
 
 def build_error_embed(error: Exception) -> discord.Embed:

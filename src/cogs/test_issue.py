@@ -6,10 +6,8 @@ from discord import app_commands
 from discord.errors import NotFound
 from discord.ext import commands
 
-from src.cogs.create_issue import IssuePreviewView
+from src.cogs.create_issue import run_pipeline
 from src.input.file import read_messages
-from src.models import CachedIssueData, IssueMetadata, PipelineData
-from src.ui import ErrorView, build_error_embed, cache_pipeline_data
 
 logger = logging.getLogger(__name__)
 
@@ -87,29 +85,12 @@ class DebugIssueCog(commands.Cog):
             )
             return
 
-        data = PipelineData(
-            context={"messages": messages},
-            input=topic,
-        )
-        metadata = IssueMetadata(
-            author_username=interaction.user.display_name,
+        await run_pipeline(
+            interaction,
+            transform=self.transform,
+            repo=repo,
+            topic=topic,
+            messages=messages,
             latest_message_link=None,
         )
-
-        retry_key = cache_pipeline_data(CachedIssueData(pipeline_data=data, metadata=metadata))
-        owner, repo_name = repo.split("/", 1)
-
-        try:
-            result = await self.transform.run(data)
-        except Exception as exc:
-            logger.exception("Transform failed in test-issue")
-            embed = build_error_embed(exc)
-            view = ErrorView(owner=owner, repo=repo_name, retry_key=retry_key)
-            await interaction.followup.send(embed=embed, view=view)
-            return
-
-        view = IssuePreviewView(owner=owner, repo=repo_name, cache_key=retry_key)
-
-        embed = discord.Embed(description=result.input)
-        await interaction.followup.send(embed=embed, view=view)
         logger.info("test-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)

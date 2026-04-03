@@ -6,6 +6,10 @@ from src.models import PipelineData
 logger = logging.getLogger(__name__)
 
 
+def _flatten_context_messages(data: PipelineData) -> str:
+    return "\n".join(msg for msgs in data.context.values() for msg in msgs)
+
+
 class GeminiTransform:
     """Base class for Gemini-powered pipeline transforms.
 
@@ -28,9 +32,7 @@ class GeminiTransform:
         return self.system_prompt
 
     def build_user_prompt(self, data: PipelineData) -> str:
-        messages_text = "\n".join(
-            msg for msgs in data.context.values() for msg in msgs
-        )
+        messages_text = _flatten_context_messages(data)
         return f"Topic: {data.input}\n\nChannel messages:\n{messages_text}"
 
     async def run(self, data: PipelineData) -> PipelineData:
@@ -126,9 +128,7 @@ Key risk areas include: nondeterministic ordering when userdata is used as a tab
     max_output_tokens = 8096
 
     def build_system_prompt(self, data: PipelineData) -> str:
-        messages_text = "\n".join(
-            msg for msgs in data.context.values() for msg in msgs
-        )
+        messages_text = _flatten_context_messages(data)
         to_return = self.system_prompt.replace(
             "{{ context.ticket_topic }}", data.input
         ).replace(
