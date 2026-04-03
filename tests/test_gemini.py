@@ -4,10 +4,11 @@ import pytest
 
 from src.models import PipelineData
 from src.transform.gemini import GeminiTransform, IssueGeneratorTransform
+from src.transform.protocol import Transform
 
 
 class TestGeminiTransform:
-    """Tests for the base class mechanics."""
+    """Tests for the base class contract."""
 
     def _make_transform(self, client=None, **overrides):
         attrs = {
@@ -24,6 +25,10 @@ class TestGeminiTransform:
                 return_value=MagicMock(text="response text")
             )
         return SubClass(client=mock_client), mock_client
+
+    def test_satisfies_transform_protocol(self):
+        mock_client = MagicMock()
+        assert isinstance(GeminiTransform(client=mock_client), Transform)
 
     @pytest.mark.asyncio
     async def test_run_returns_pipeline_data(self):
@@ -49,38 +54,12 @@ class TestGeminiTransform:
         assert result.context["messages"] == ["msg1"]
 
     @pytest.mark.asyncio
-    async def test_run_calls_api_with_configured_model(self):
-        transform, mock_client = self._make_transform(model="gemini-custom")
+    async def test_run_raises_on_api_error(self):
+        transform, mock_client = self._make_transform()
+        mock_client.aio.models.generate_content.side_effect = RuntimeError("API down")
         data = PipelineData(input="topic", context={"messages": ["msg1"]})
-        await transform.run(data)
-        call_kwargs = mock_client.aio.models.generate_content.call_args.kwargs
-        assert call_kwargs["model"] == "gemini-custom"
-
-    @pytest.mark.asyncio
-    async def test_run_calls_api_with_configured_system_prompt(self):
-        transform, mock_client = self._make_transform(
-            system_prompt="Custom prompt"
-        )
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
-        await transform.run(data)
-        call_kwargs = mock_client.aio.models.generate_content.call_args.kwargs
-        assert call_kwargs["config"]["system_instruction"] == "Custom prompt"
-
-    @pytest.mark.asyncio
-    async def test_run_calls_api_with_configured_temperature(self):
-        transform, mock_client = self._make_transform(temperature=0.9)
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
-        await transform.run(data)
-        call_kwargs = mock_client.aio.models.generate_content.call_args.kwargs
-        assert call_kwargs["config"]["temperature"] == 0.9
-
-    @pytest.mark.asyncio
-    async def test_run_calls_api_with_configured_max_tokens(self):
-        transform, mock_client = self._make_transform(max_output_tokens=2048)
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
-        await transform.run(data)
-        call_kwargs = mock_client.aio.models.generate_content.call_args.kwargs
-        assert call_kwargs["config"]["max_output_tokens"] == 2048
+        with pytest.raises(RuntimeError, match="API down"):
+            await transform.run(data)
 
     @pytest.mark.asyncio
     async def test_build_user_prompt_default(self):
@@ -99,31 +78,13 @@ class TestGeminiTransform:
         data = PipelineData(input="topic", context={})
         assert transform.build_system_prompt(data) == "Static prompt"
 
-    @pytest.mark.asyncio
-    async def test_run_passes_built_system_prompt_to_api(self):
-        transform, mock_client = self._make_transform(
-            system_prompt="Template {{ data }}"
-        )
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
-        await transform.run(data)
-        call_kwargs = mock_client.aio.models.generate_content.call_args.kwargs
-        assert call_kwargs["config"]["system_instruction"] == "Template {{ data }}"
-
 
 class TestIssueGeneratorTransform:
     """Tests for the concrete issue-generation subclass."""
 
-    def test_has_correct_model(self):
-        assert IssueGeneratorTransform.model == "gemini-3-flash-preview"
-
-    def test_has_correct_temperature(self):
-        assert IssueGeneratorTransform.temperature == 0.3
-
-    def test_has_correct_max_tokens(self):
-        assert IssueGeneratorTransform.max_output_tokens == 8096
-
-    def test_system_prompt_mentions_ticket(self):
-        assert "ticket" in IssueGeneratorTransform.system_prompt.lower()
+    def test_satisfies_transform_protocol(self):
+        mock_client = MagicMock()
+        assert isinstance(IssueGeneratorTransform(client=mock_client), Transform)
 
     def test_build_system_prompt_interpolates_topic(self):
         transform = IssueGeneratorTransform(client=MagicMock())

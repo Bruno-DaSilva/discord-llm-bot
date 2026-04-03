@@ -7,16 +7,7 @@ import pytest
 
 from src.output.github_auth import GitHubAppAuth, _build_jwt
 
-# RSA key pair for testing (DO NOT use in production)
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
-
-_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-TEST_PRIVATE_KEY_PEM = _private_key.private_bytes(
-    encoding=serialization.Encoding.PEM,
-    format=serialization.PrivateFormat.PKCS8,
-    encryption_algorithm=serialization.NoEncryption(),
-).decode()
+from tests.conftest import TEST_PRIVATE_KEY_PEM, test_private_key as _private_key
 
 
 class TestBuildJwt:

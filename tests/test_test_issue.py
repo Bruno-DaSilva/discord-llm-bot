@@ -1,29 +1,20 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
-from discord.ext import commands
 
 import pytest
 
 from src.cogs.test_issue import DebugIssueCog
 from src.ui import ErrorView, RetryIssueButton
 
-
-@pytest.fixture
-def bot():
-    b = MagicMock(spec=commands.Bot)
-    b.tree = MagicMock()
-    return b
+from tests.conftest import FakeTransform
 
 
 @pytest.fixture
 def cog(bot):
-    mock_transform = AsyncMock()
-    mock_transform.run.return_value = MagicMock(input="# Title\nBody", context={})
-    return DebugIssueCog(
-        bot,
-        transform=mock_transform,
-    )
+    fake = FakeTransform()
+    mock_transform = AsyncMock(wraps=fake)
+    return DebugIssueCog(bot, transform=mock_transform)
 
 
 class TestDebugIssueCogCommand:

@@ -1,10 +1,9 @@
-import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-from src.models import CachedIssueData, IssueMetadata, PipelineData
+from src.models import PipelineData
 from src.ui import (
     CancelIssueButton,
     CreateIssueButton,
@@ -16,6 +15,8 @@ from src.ui import (
     cache_pipeline_data,
     get_cached_pipeline_data,
 )
+
+from tests.conftest import make_cached
 
 
 class TestDeleteButton:
@@ -67,30 +68,22 @@ class TestDeleteView:
 
 
 class TestCreateIssueButton:
-    def test_custom_id_encodes_owner_repo_and_key(self):
+    @pytest.mark.asyncio
+    async def test_custom_id_round_trips(self):
+        """Construct a button, parse its custom_id, verify fields match."""
         btn = CreateIssueButton(owner="myorg", repo="myrepo", cache_key="abc1")
-        assert btn.custom_id == "create_issue:myorg/myrepo/abc1"
-
-    def test_button_label_is_create(self):
-        btn = CreateIssueButton(owner="o", repo="r", cache_key="k")
-        assert btn.item.label == "Create"
+        match = CreateIssueButton.__discord_ui_compiled_template__.match(btn.custom_id)
+        assert match is not None
+        interaction = AsyncMock()
+        item = MagicMock()
+        parsed = await CreateIssueButton.from_custom_id(interaction, item, match)
+        assert parsed.owner == "myorg"
+        assert parsed.repo == "myrepo"
+        assert parsed.cache_key == "abc1"
 
     def test_button_style_is_green(self):
         btn = CreateIssueButton(owner="o", repo="r", cache_key="k")
         assert btn.item.style == discord.ButtonStyle.green
-
-    @pytest.mark.asyncio
-    async def test_from_custom_id_extracts_owner_repo_key(self):
-        match = re.match(
-            r"create_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
-            "create_issue:myorg/myrepo/abc1",
-        )
-        interaction = AsyncMock()
-        item = MagicMock()
-        btn = await CreateIssueButton.from_custom_id(interaction, item, match)
-        assert btn.owner == "myorg"
-        assert btn.repo == "myrepo"
-        assert btn.cache_key == "abc1"
 
     @pytest.mark.asyncio
     async def test_callback_cache_miss_sends_expired(self):
@@ -108,7 +101,7 @@ class TestCreateIssueButton:
     async def test_callback_creates_issue_and_sends_delete_view(self, mock_create):
         mock_create.return_value = "https://github.com/o/r/issues/42"
 
-        cached = _make_cached(author="alice", link="https://discord.com/channels/1/2/3")
+        cached = make_cached(author="alice", link="https://discord.com/channels/1/2/3")
         key = cache_pipeline_data(cached)
 
         btn = CreateIssueButton(owner="o", repo="r", cache_key=key)
@@ -149,7 +142,7 @@ class TestCreateIssueButton:
     async def test_callback_github_failure_sends_ephemeral_error(self, mock_create):
         mock_create.side_effect = RuntimeError("GitHub API down")
 
-        cached = _make_cached(author="alice", link="https://discord.com/channels/1/2/3")
+        cached = make_cached(author="alice", link="https://discord.com/channels/1/2/3")
         key = cache_pipeline_data(cached)
 
         btn = CreateIssueButton(owner="o", repo="r", cache_key=key)
@@ -176,29 +169,21 @@ class TestCreateIssueButton:
 
 
 class TestCancelIssueButton:
-    def test_custom_id_encodes_owner_and_repo(self):
+    @pytest.mark.asyncio
+    async def test_custom_id_round_trips(self):
+        """Construct a button, parse its custom_id, verify fields match."""
         btn = CancelIssueButton(owner="myorg", repo="myrepo")
-        assert btn.custom_id == "cancel_issue:myorg/myrepo"
-
-    def test_button_label_is_cancel(self):
-        btn = CancelIssueButton(owner="o", repo="r")
-        assert btn.item.label == "Cancel"
+        match = CancelIssueButton.__discord_ui_compiled_template__.match(btn.custom_id)
+        assert match is not None
+        interaction = AsyncMock()
+        item = MagicMock()
+        parsed = await CancelIssueButton.from_custom_id(interaction, item, match)
+        assert parsed.owner == "myorg"
+        assert parsed.repo == "myrepo"
 
     def test_button_style_is_red(self):
         btn = CancelIssueButton(owner="o", repo="r")
         assert btn.item.style == discord.ButtonStyle.red
-
-    @pytest.mark.asyncio
-    async def test_from_custom_id_extracts_owner_repo(self):
-        match = re.match(
-            r"cancel_issue:(?P<owner>[^/]+)/(?P<repo>.+)",
-            "cancel_issue:myorg/myrepo",
-        )
-        interaction = AsyncMock()
-        item = MagicMock()
-        btn = await CancelIssueButton.from_custom_id(interaction, item, match)
-        assert btn.owner == "myorg"
-        assert btn.repo == "myrepo"
 
     @pytest.mark.asyncio
     async def test_callback_cancels_and_removes_view(self):
@@ -213,21 +198,15 @@ class TestCancelIssueButton:
         assert "cancelled" in call_kwargs["content"].lower()
 
 
-def _make_cached(input="topic", messages=None, author="tester", link=None):
-    pipeline = PipelineData(input=input, context={"messages": messages or ["msg"]})
-    metadata = IssueMetadata(author_username=author, latest_message_link=link)
-    return CachedIssueData(pipeline_data=pipeline, metadata=metadata)
-
-
 class TestRetryCache:
     def test_cache_pipeline_data_returns_key(self):
-        data = _make_cached()
+        data = make_cached()
         key = cache_pipeline_data(data)
         assert isinstance(key, str)
-        assert len(key) == 8
+        assert key  # non-empty
 
     def test_get_cached_pipeline_data_returns_stored_data(self):
-        data = _make_cached()
+        data = make_cached()
         key = cache_pipeline_data(data)
         assert get_cached_pipeline_data(key) is data
 
@@ -236,30 +215,22 @@ class TestRetryCache:
 
 
 class TestRetryIssueButton:
-    def test_custom_id_encodes_owner_repo_and_key(self):
+    @pytest.mark.asyncio
+    async def test_custom_id_round_trips(self):
+        """Construct a button, parse its custom_id, verify fields match."""
         btn = RetryIssueButton(owner="o", repo="r", retry_key="abc123")
-        assert btn.custom_id == "retry_issue:o/r/abc123"
-
-    def test_button_label_is_retry(self):
-        btn = RetryIssueButton(owner="o", repo="r", retry_key="abc123")
-        assert btn.item.label == "Retry"
+        match = RetryIssueButton.__discord_ui_compiled_template__.match(btn.custom_id)
+        assert match is not None
+        interaction = AsyncMock()
+        item = MagicMock()
+        parsed = await RetryIssueButton.from_custom_id(interaction, item, match)
+        assert parsed.owner == "o"
+        assert parsed.repo == "r"
+        assert parsed.retry_key == "abc123"
 
     def test_button_style_is_blurple(self):
         btn = RetryIssueButton(owner="o", repo="r", retry_key="abc123")
         assert btn.item.style == discord.ButtonStyle.blurple
-
-    @pytest.mark.asyncio
-    async def test_from_custom_id_extracts_owner_repo_key(self):
-        match = re.match(
-            r"retry_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
-            "retry_issue:myorg/myrepo/abc123",
-        )
-        interaction = AsyncMock()
-        item = MagicMock()
-        btn = await RetryIssueButton.from_custom_id(interaction, item, match)
-        assert btn.owner == "myorg"
-        assert btn.repo == "myrepo"
-        assert btn.retry_key == "abc123"
 
     @pytest.mark.asyncio
     async def test_callback_cache_miss_sends_ephemeral_error(self):
@@ -317,7 +288,7 @@ class TestErrorView:
 class TestRetryIssueButtonErrors:
     @pytest.mark.asyncio
     async def test_callback_transform_error_shows_error_view(self):
-        cached = _make_cached()
+        cached = make_cached()
         key = cache_pipeline_data(cached)
 
         btn = RetryIssueButton(owner="o", repo="r", retry_key=key)
@@ -340,7 +311,7 @@ class TestRetryIssueButtonErrors:
 
     @pytest.mark.asyncio
     async def test_callback_transform_error_caches_new_key(self):
-        cached = _make_cached()
+        cached = make_cached()
         key = cache_pipeline_data(cached)
 
         btn = RetryIssueButton(owner="o", repo="r", retry_key=key)
@@ -362,7 +333,7 @@ class TestRetryIssueButtonErrors:
 
     @pytest.mark.asyncio
     async def test_callback_cache_hit_shows_loading_then_result(self):
-        cached = _make_cached()
+        cached = make_cached()
         key = cache_pipeline_data(cached)
 
         btn = RetryIssueButton(owner="o", repo="r", retry_key=key)

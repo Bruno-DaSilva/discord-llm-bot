@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
-from discord.ext import commands
 
 import pytest
 
@@ -9,31 +8,14 @@ from src.cogs.create_issue import CreateIssueCog, CreateIssueModal, IssuePreview
 from src.output.discord import FetchResult
 from src.ui import CancelIssueButton, CreateIssueButton, ErrorView, RetryIssueButton
 
-
-@pytest.fixture
-def bot():
-    b = MagicMock(spec=commands.Bot)
-    b.tree = MagicMock()
-    return b
+from tests.conftest import FakeTransform, mock_interaction as _mock_interaction
 
 
 @pytest.fixture
 def cog(bot):
-    mock_transform = AsyncMock()
-    mock_transform.run.return_value = MagicMock(input="# Title\nBody", context={})
-    return CreateIssueCog(
-        bot,
-        transform=mock_transform,
-    )
-
-
-def _mock_interaction():
-    interaction = AsyncMock()
-    interaction.response = AsyncMock()
-    interaction.channel = MagicMock()
-    interaction.user = MagicMock()
-    interaction.user.display_name = "TestUser"
-    return interaction
+    fake = FakeTransform()
+    mock_transform = AsyncMock(wraps=fake)
+    return CreateIssueCog(bot, transform=mock_transform)
 
 
 class TestCreateIssueCogCommand:
