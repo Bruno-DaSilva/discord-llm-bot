@@ -16,6 +16,13 @@ from src.ui import CancelIssueButton, CreateIssueButton, DeleteView, RetryIssueB
 logger = logging.getLogger(__name__)
 
 
+def _read_required_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise SystemExit(f"Missing required environment variable: {name}")
+    return value
+
+
 class IssueBot(commands.Bot):
     def __init__(
         self,
@@ -31,6 +38,7 @@ class IssueBot(commands.Bot):
         self._github_installation_id = github_installation_id
         super().__init__(**kwargs)
 
+    # todo not sure what this abstraction is intended for - seems like at minimum poor naming
     async def setup_hook(self) -> None:
         self.add_view(DeleteView())
         self.add_dynamic_items(CreateIssueButton, CancelIssueButton, RetryIssueButton)
@@ -67,7 +75,8 @@ class IssueBot(commands.Bot):
         await self.tree.sync()
         logger.info("Command tree synced")
 
-
+# This setup fn makes it easier to test the bot without 
+#   needing to set up a full .env file
 def create_bot(
     gemini_api_key: str,
     github_app_id: str,
@@ -93,9 +102,9 @@ if __name__ == "__main__":
     setup_logging()
 
     bot = create_bot(
-        gemini_api_key=os.environ["GEMINI_API_KEY"],
-        github_app_id=os.environ["GITHUB_APP_ID"],
-        github_private_key_path=os.environ["GITHUB_APP_PRIVATE_KEY_PATH"],
-        github_installation_id=os.environ["GITHUB_APP_INSTALLATION_ID"],
+        gemini_api_key=_read_required_env("GEMINI_API_KEY"),
+        github_app_id=_read_required_env("GITHUB_APP_ID"),
+        github_private_key_path=_read_required_env("GITHUB_APP_PRIVATE_KEY_PATH"),
+        github_installation_id=_read_required_env("GITHUB_APP_INSTALLATION_ID"),
     )
-    bot.run(os.environ["DISCORD_BOT_TOKEN"])
+    bot.run(_read_required_env("DISCORD_BOT_TOKEN"))

@@ -24,11 +24,11 @@ class TestDebugIssueCogCommand:
         interaction = AsyncMock()
         await cog.test_issue_command.callback(
             cog, interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test.txt", start_line=5, n=10,
+            filepath="convos/test.txt", end_line=5, n=10,
         )
         mock_do.assert_awaited_once_with(
             interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test.txt", start_line=5, n=10,
+            filepath="convos/test.txt", end_line=5, n=10,
         )
 
 
@@ -46,7 +46,7 @@ class TestDebugIssueCog:
 
         await cog._do_test_issue(
             interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test1.txt", start_line=1, n=5,
+            filepath="convos/test1.txt", end_line=1, n=5,
         )
 
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)
@@ -61,11 +61,11 @@ class TestDebugIssueCog:
 
         await cog._do_test_issue(
             interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test1.txt", start_line=3, n=10,
+            filepath="convos/test1.txt", end_line=3, n=10,
         )
 
         mock_read.assert_called_once_with(
-            "convos/test1.txt", start_line=3, count=10,
+            "convos/test1.txt", end_line=3, count=10,
         )
 
     @pytest.mark.asyncio
@@ -80,7 +80,7 @@ class TestDebugIssueCog:
 
         await cog._do_test_issue(
             interaction, repo="owner/repo", topic="login bug",
-            filepath="convos/test1.txt", start_line=1, n=10,
+            filepath="convos/test1.txt", end_line=1, n=10,
         )
 
         cog.transform.run.assert_awaited_once()
@@ -101,7 +101,7 @@ class TestDebugIssueCog:
 
         await cog._do_test_issue(
             interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test1.txt", start_line=1, n=5,
+            filepath="convos/test1.txt", end_line=1, n=5,
         )
 
         interaction.followup.send.assert_awaited_once()
@@ -121,7 +121,7 @@ class TestDebugIssueCog:
 
         await cog._do_test_issue(
             interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test1.txt", start_line=1, n=5,
+            filepath="convos/test1.txt", end_line=1, n=5,
         )
 
         interaction.followup.send.assert_awaited_once()
@@ -140,7 +140,7 @@ class TestDebugIssueCog:
 
         await cog._do_test_issue(
             interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test1.txt", start_line=1, n=5,
+            filepath="convos/test1.txt", end_line=1, n=5,
         )
 
         interaction.followup.send.assert_awaited_once()
@@ -158,7 +158,7 @@ class TestDebugIssueCog:
 
         await cog._do_test_issue(
             interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test1.txt", start_line=1, n=5,
+            filepath="convos/test1.txt", end_line=1, n=5,
         )
 
     @pytest.mark.asyncio
@@ -171,7 +171,7 @@ class TestDebugIssueCog:
 
         await cog._do_test_issue(
             interaction, repo="owner/repo", topic="bug",
-            filepath="convos/test1.txt", start_line=1, n=5,
+            filepath="convos/test1.txt", end_line=1, n=5,
         )
 
         call_kwargs = interaction.followup.send.call_args.kwargs

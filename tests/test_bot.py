@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 import pytest
 
-from src.bot import create_bot
+from src.bot import create_bot, _read_required_env
 from src.ui import CancelIssueButton, CreateIssueButton, DeleteView, RetryIssueButton
 
 from tests.conftest import TEST_PRIVATE_KEY_PEM
@@ -19,6 +19,21 @@ def bot_kwargs(tmp_path):
         "github_private_key_path": str(pem),
         "github_installation_id": "67890",
     }
+
+
+class TestReadRequiredEnv:
+    def test_returns_value_when_set(self, monkeypatch):
+        monkeypatch.setenv("TEST_VAR", "hello")
+        assert _read_required_env("TEST_VAR") == "hello"
+
+    def test_exits_when_missing(self):
+        with pytest.raises(SystemExit, match="Missing required environment variable: NONEXISTENT_VAR"):
+            _read_required_env("NONEXISTENT_VAR")
+
+    def test_exits_when_empty(self, monkeypatch):
+        monkeypatch.setenv("TEST_VAR", "")
+        with pytest.raises(SystemExit, match="Missing required environment variable: TEST_VAR"):
+            _read_required_env("TEST_VAR")
 
 
 class TestCreateBot:
