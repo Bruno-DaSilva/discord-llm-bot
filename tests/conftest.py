@@ -1,3 +1,4 @@
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -19,6 +20,21 @@ TEST_PRIVATE_KEY_PEM = _private_key.private_bytes(
 ).decode()
 # Expose the key object for JWT verification in test_github_auth
 test_private_key = _private_key
+
+
+# ---------------------------------------------------------------------------
+# Isolate tests from host proxy configuration
+#   needed mostly for when running in a sandbox... like in claude code
+# ---------------------------------------------------------------------------
+_PROXY_VARS = ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY",
+               "all_proxy", "https_proxy", "http_proxy")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _clear_proxy_env():
+    saved = {k: os.environ.pop(k) for k in _PROXY_VARS if k in os.environ}
+    yield
+    os.environ.update(saved)
 
 
 # ---------------------------------------------------------------------------
