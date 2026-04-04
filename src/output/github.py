@@ -5,6 +5,34 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
+class RepoNotInstalled(Exception):
+    """Raised when the GitHub App is not installed on the target repository."""
+
+    def __init__(self, owner: str, repo: str) -> None:
+        self.owner = owner
+        self.repo = repo
+        super().__init__(f"GitHub App is not installed on {owner}/{repo}")
+
+
+async def check_repo_installation(
+    client: httpx.AsyncClient,
+    owner: str,
+    repo: str,
+    app_jwt: str,
+) -> None:
+    """Verify the GitHub App is installed on owner/repo. Raises RepoNotInstalled if not."""
+    response = await client.get(
+        f"https://api.github.com/repos/{owner}/{repo}/installation",
+        headers={
+            "Authorization": f"Bearer {app_jwt}",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    if response.status_code == 404:
+        raise RepoNotInstalled(owner, repo)
+    response.raise_for_status()
+
+
 async def create_issue(
     client: httpx.AsyncClient,
     owner: str,

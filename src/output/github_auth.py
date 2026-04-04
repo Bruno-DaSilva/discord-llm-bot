@@ -32,6 +32,10 @@ class GitHubAppAuth:
         self._cached_token: str | None = None
         self._token_expires_at: float = 0
 
+    def get_app_jwt(self) -> str:
+        """Return a fresh app-level JWT for endpoints requiring app authentication."""
+        return _build_jwt(self._app_id, self._private_key_pem)
+
     async def get_token(self) -> str:
         if self._cached_token and time.time() < self._token_expires_at:
             return self._cached_token

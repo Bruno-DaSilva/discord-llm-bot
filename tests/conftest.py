@@ -1,5 +1,5 @@
 import os
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -98,6 +98,19 @@ def make_cached(input="topic", messages=None, author="tester", link=None):
     pipeline = PipelineData(input=input, context={"messages": messages or ["msg"]})
     metadata = IssueMetadata(author_username=author, latest_message_link=link)
     return CachedIssueData(pipeline_data=pipeline, metadata=metadata)
+
+
+# ---------------------------------------------------------------------------
+# Patch check_repo_installation by default — tests that need to control it
+# can override via @patch on the individual test/class.
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _patch_check_repo_installation():
+    with patch(
+        "src.cogs.create_issue.check_repo_installation",
+        new_callable=AsyncMock,
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------

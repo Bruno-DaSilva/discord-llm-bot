@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from src.models import CachedIssueData, IssueMetadata, PipelineData
 from src.output.discord import fetch_messages_with_metadata, resolve_mentions
+from src.output.github import RepoNotInstalled, check_repo_installation
 from src.transform.protocol import Transform
 from src.ui import (
     CancelIssueButton,
@@ -40,8 +41,26 @@ async def run_pipeline(
         latest_message_link=latest_message_link,
     )
 
-    retry_key = cache_pipeline_data(CachedIssueData(pipeline_data=data, metadata=metadata))
     owner, repo_name = repo.split("/", 1)
+
+    try:
+        app_jwt = interaction.client.github_auth.get_app_jwt()
+        await check_repo_installation(
+            interaction.client.http_client, owner, repo_name, app_jwt
+        )
+    except RepoNotInstalled:
+        embed = discord.Embed(
+            title="Repository not available",
+            description=(
+                f"The GitHub App is not installed on **{owner}/{repo_name}**.\n\n"
+                "Ask the repository owner to install the app, then try again."
+            ),
+            color=discord.Color.red(),
+        )
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+        return
+
+    retry_key = cache_pipeline_data(CachedIssueData(pipeline_data=data, metadata=metadata))
 
     try:
         result = await transform.run(data)

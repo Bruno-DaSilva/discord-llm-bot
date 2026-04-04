@@ -6,6 +6,7 @@ import pytest
 
 from src.cogs.create_issue import CreateIssueCog, CreateIssueModal, IssuePreviewView
 from src.output.discord import FetchResult
+from src.output.github import RepoNotInstalled
 from src.ui import CancelIssueButton, CreateIssueButton, ErrorView, RetryIssueButton
 
 from tests.conftest import FakeTransform, mock_interaction as _mock_interaction
@@ -91,6 +92,40 @@ class TestRunPipeline:
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
         assert any(isinstance(c, RetryIssueButton) for c in view.children)
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.check_repo_installation", new_callable=AsyncMock)
+    async def test_repo_not_installed_sends_error_embed(self, mock_check, cog):
+        mock_check.side_effect = RepoNotInstalled("acme", "widgets")
+        interaction = _mock_interaction()
+        await cog._run_pipeline(
+            interaction,
+            repo="acme/widgets",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+        )
+        interaction.followup.send.assert_awaited_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert call_kwargs["embed"].color == discord.Color.red()
+        assert "not installed" in call_kwargs["embed"].description.lower()
+        assert "acme/widgets" in call_kwargs["embed"].description
+        cog.transform.run.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.check_repo_installation", new_callable=AsyncMock)
+    async def test_repo_installed_proceeds_to_transform(self, mock_check, cog):
+        mock_check.return_value = None
+        interaction = _mock_interaction()
+        await cog._run_pipeline(
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+        )
+        mock_check.assert_awaited_once()
+        cog.transform.run.assert_awaited_once()
 
 
 class TestCreateIssueCog:

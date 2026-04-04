@@ -103,6 +103,15 @@ class TestGitHubAppAuth:
         await auth.get_token()
         assert client.post.await_count == 2
 
+    def test_get_app_jwt_returns_valid_jwt(self):
+        auth = self._make_auth()
+        token = auth.get_app_jwt()
+        payload = jwt.decode(
+            token, _private_key.public_key(), algorithms=["RS256"]
+        )
+        assert payload["iss"] == "12345"
+        assert "exp" in payload
+
     @pytest.mark.asyncio
     async def test_raises_on_http_error(self):
         mock_response = MagicMock()

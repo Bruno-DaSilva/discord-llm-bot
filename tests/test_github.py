@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from src.output.github import append_footer, create_issue
+from src.output.github import (
+    RepoNotInstalled,
+    append_footer,
+    check_repo_installation,
+    create_issue,
+)
 
 
 class TestCreateIssue:
@@ -57,6 +62,74 @@ class TestCreateIssue:
                 title="t",
                 body="b",
                 token="tok",
+            )
+
+
+class TestCheckRepoInstallation:
+    @pytest.mark.asyncio
+    async def test_returns_none_when_installed(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = mock_response
+
+        result = await check_repo_installation(
+            client=mock_client, owner="owner", repo="repo", app_jwt="jwt-token"
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_raises_repo_not_installed_on_404(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = mock_response
+
+        with pytest.raises(RepoNotInstalled) as exc_info:
+            await check_repo_installation(
+                client=mock_client, owner="acme", repo="widgets", app_jwt="jwt-token"
+            )
+        assert exc_info.value.owner == "acme"
+        assert exc_info.value.repo == "widgets"
+
+    @pytest.mark.asyncio
+    async def test_calls_correct_endpoint_with_jwt(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = mock_response
+
+        await check_repo_installation(
+            client=mock_client, owner="owner", repo="repo", app_jwt="my-jwt"
+        )
+
+        mock_client.get.assert_called_once_with(
+            "https://api.github.com/repos/owner/repo/installation",
+            headers={
+                "Authorization": "Bearer my-jwt",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_propagates_other_http_errors(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "error", request=MagicMock(), response=mock_response
+        )
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = mock_response
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await check_repo_installation(
+                client=mock_client, owner="owner", repo="repo", app_jwt="jwt-token"
             )
 
 
