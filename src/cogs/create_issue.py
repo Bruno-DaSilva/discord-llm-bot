@@ -114,32 +114,37 @@ class CreateIssueCog(commands.Cog):
         elapsed = (time.monotonic() - t0) * 1000
         logger.info("Deferred interaction (%.0fms)", elapsed)
 
-        logger.debug("Fetching %d messages", n)
-        fetch_result = await fetch_messages_with_metadata(interaction.channel, limit=n)
-        logger.debug(
-            "Fetched %d messages (%.0fms)",
-            len(fetch_result.messages),
-            (time.monotonic() - t0) * 1000,
-        )
-
-        logger.debug("Messages: \n%r\n===", fetch_result.messages)
-
-        if not fetch_result.messages:
-            logger.error("No messages retrieved from channel %s", interaction.channel)
-            await interaction.followup.send(
-                content="Internal error: no messages could be retrieved.",
-                ephemeral=True,
+        try:
+            logger.debug("Fetching %d messages", n)
+            fetch_result = await fetch_messages_with_metadata(interaction.channel, limit=n)
+            logger.debug(
+                "Fetched %d messages (%.0fms)",
+                len(fetch_result.messages),
+                (time.monotonic() - t0) * 1000,
             )
-            return
 
-        await self._run_pipeline(
-            interaction,
-            repo=repo,
-            topic=topic,
-            messages=fetch_result.messages,
-            latest_message_link=fetch_result.latest_message_link,
-        )
-        logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
+            logger.debug("Messages: \n%r\n===", fetch_result.messages)
+
+            if not fetch_result.messages:
+                logger.error("No messages retrieved from channel %s", interaction.channel)
+                await interaction.followup.send(
+                    content="Internal error: no messages could be retrieved.",
+                    ephemeral=True,
+                )
+                return
+
+            await self._run_pipeline(
+                interaction,
+                repo=repo,
+                topic=topic,
+                messages=fetch_result.messages,
+                latest_message_link=fetch_result.latest_message_link,
+            )
+            logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
+        except Exception as exc:
+            logger.exception("create-issue failed")
+            embed = build_error_embed(exc)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def _run_pipeline(
         self,

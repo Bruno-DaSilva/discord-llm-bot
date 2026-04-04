@@ -196,6 +196,19 @@ class TestCreateIssueCog:
         assert any(isinstance(c, RetryIssueButton) for c in call_kwargs["view"].children)
 
     @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
+    async def test_fetch_error_sends_error_embed(self, mock_fetch, cog):
+        mock_fetch.side_effect = RuntimeError("Discord API down")
+        interaction = self._mock_interaction()
+
+        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
+
+        interaction.followup.send.assert_awaited_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert "RuntimeError" in call_kwargs["embed"].description
+        assert call_kwargs["ephemeral"] is True
+
+    @pytest.mark.asyncio
     async def test_expired_interaction_is_ignored(self, cog):
         interaction = AsyncMock()
         interaction.response = AsyncMock()
