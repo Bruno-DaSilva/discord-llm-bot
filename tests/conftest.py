@@ -88,7 +88,9 @@ def failing_transform():
 def mock_interaction():
     interaction = AsyncMock()
     interaction.response = AsyncMock()
+    interaction.response.is_done = MagicMock(return_value=True)
     interaction.channel = MagicMock()
+    interaction.client = MagicMock()
     interaction.user = MagicMock()
     interaction.user.display_name = "TestUser"
     return interaction

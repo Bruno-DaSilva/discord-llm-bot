@@ -221,6 +221,7 @@ class TestCreateIssueCog:
         interaction = AsyncMock()
         interaction.response = AsyncMock()
         interaction.channel = MagicMock()
+        interaction.client = MagicMock()
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
@@ -300,6 +301,7 @@ class TestIssuePreviewView:
         interaction = AsyncMock()
         interaction.response = AsyncMock()
         interaction.channel = MagicMock()
+        interaction.client = MagicMock()
         interaction.user = MagicMock()
         interaction.user.display_name = "TestUser"
 
