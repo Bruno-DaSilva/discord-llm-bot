@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from src.cogs.create_issue import run_pipeline
 from src.output.discord import fetch_messages_with_metadata, resolve_mentions
+from src.output.github_client import GitHubClient
 from src.transform.protocol import Transform
 from src.ui import build_error_embed
 
@@ -17,9 +18,12 @@ REPO = "beyond-all-reason/recoilengine"
 
 
 class EngineIssueCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, transform: Transform) -> None:
+    def __init__(
+        self, bot: commands.Bot, transform: Transform, github: GitHubClient
+    ) -> None:
         self.bot = bot
         self.transform = transform
+        self.github = github
         self.ctx_menu = app_commands.ContextMenu(
             name="Engine Issue",
             callback=self.engine_issue_context_menu,
@@ -84,6 +88,7 @@ class EngineIssueCog(commands.Cog):
             await run_pipeline(
                 interaction,
                 transform=self.transform,
+                github=self.github,
                 repo=REPO,
                 topic=topic,
                 messages=fetch_result.messages,
@@ -128,36 +133,56 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        t0 = time.monotonic()
         await interaction.response.defer(ephemeral=True)
 
         n = int(self.n.value or "20")
-        resolved_content = resolve_mentions(
-            self.target_message.content,
-            self.target_message.mentions,
-            self.target_message.role_mentions,
-            self.target_message.channel_mentions,
-        )
-        target_formatted = (
-            f"{self.target_message.author.display_name}: {resolved_content}"
-        )
+        logger.info("engine-issue modal submitted: topic=%r n=%d", self.topic.value, n)
 
-        fetch_result = await fetch_messages_with_metadata(
-            self.target_message.channel, limit=n - 1, before=self.target_message
-        )
-        messages = [target_formatted] + fetch_result.messages
+        try:
+            resolved_content = resolve_mentions(
+                self.target_message.content,
+                self.target_message.mentions,
+                self.target_message.role_mentions,
+                self.target_message.channel_mentions,
+            )
+            target_formatted = (
+                f"{self.target_message.author.display_name}: {resolved_content}"
+            )
 
-        guild = self.target_message.guild
-        if guild is not None:
-            link = f"https://discord.com/channels/{guild.id}/{self.target_message.channel.id}/{self.target_message.id}"
-        else:
-            link = None
+            logger.debug("Fetching %d messages before target", n - 1)
+            fetch_result = await fetch_messages_with_metadata(
+                self.target_message.channel, limit=n - 1, before=self.target_message
+            )
+            messages = [target_formatted] + fetch_result.messages
+            logger.debug(
+                "Fetched %d messages (%.0fms)",
+                len(messages),
+                (time.monotonic() - t0) * 1000,
+            )
+            logger.debug("Messages: \n%r\n===", messages)
 
-        await run_pipeline(
-            interaction,
-            transform=self.cog.transform,
-            repo=REPO,
-            topic=self.topic.value,
-            messages=messages,
-            latest_message_link=link,
-            ephemeral=True,
-        )
+            guild = self.target_message.guild
+            if guild is not None:
+                link = f"https://discord.com/channels/{guild.id}/{self.target_message.channel.id}/{self.target_message.id}"
+            else:
+                link = None
+
+            await run_pipeline(
+                interaction,
+                transform=self.cog.transform,
+                github=self.cog.github,
+                repo=REPO,
+                topic=self.topic.value,
+                messages=messages,
+                latest_message_link=link,
+                ephemeral=True,
+            )
+            logger.info(
+                "engine-issue modal complete (%.0fms)",
+                (time.monotonic() - t0) * 1000,
+            )
+        except Exception as exc:
+            logger.exception("engine-issue modal failed")
+            embed = build_error_embed(exc)
+            await interaction.followup.send(embed=embed, ephemeral=True)

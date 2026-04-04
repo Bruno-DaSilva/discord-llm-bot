@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -8,18 +9,17 @@ class PipelineData:
 
 
 @dataclass
-class IssueMetadata:
-    author_username: str
-    latest_message_link: str | None
+class CachedCommandData:
+    """Generic cached data for any command's retry flow."""
 
-
-@dataclass
-class CachedIssueData:
+    cmd_type: str
     pipeline_data: PipelineData
-    metadata: IssueMetadata
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
-class CachedGitHubCreate:
-    title: str
-    body: str
+class CachedOutputData:
+    """Cached data for retrying a failed output action."""
+
+    cmd_type: str
+    payload: dict[str, Any] = field(default_factory=dict)

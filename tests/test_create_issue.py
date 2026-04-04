@@ -4,19 +4,35 @@ import discord
 
 import pytest
 
-from src.cogs.create_issue import CreateIssueCog, CreateIssueModal, IssuePreviewView
+from src.cogs.create_issue import CreateIssueCog, CreateIssueHandler, CreateIssueModal
 from src.output.discord import FetchResult
 from src.output.github import RepoNotInstalled
-from src.ui import CancelIssueButton, CreateIssueButton, ErrorView, RetryIssueButton
+from src.ui import (
+    CancelButton,
+    ConfirmButton,
+    ErrorView,
+    PreviewView,
+    RetryButton,
+    cache_pipeline_data,
+)
 
-from tests.conftest import FakeTransform, mock_interaction as _mock_interaction
+from tests.conftest import (
+    FakeTransform,
+    make_cached,
+    mock_interaction as _mock_interaction,
+)
 
 
 @pytest.fixture
 def cog(bot):
     fake = FakeTransform()
     mock_transform = AsyncMock(wraps=fake)
-    return CreateIssueCog(bot, transform=mock_transform)
+    mock_github = AsyncMock()
+    mock_github.check_repo_installation = AsyncMock()
+    mock_github.create_issue = AsyncMock(
+        return_value="https://github.com/o/r/issues/1"
+    )
+    return CreateIssueCog(bot, transform=mock_transform, github=mock_github)
 
 
 class TestCreateIssueCogCommand:
@@ -68,7 +84,7 @@ class TestRunPipeline:
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
         assert "# Title" in call_kwargs["embed"].description
-        assert isinstance(call_kwargs["view"], IssuePreviewView)
+        assert isinstance(call_kwargs["view"], PreviewView)
 
     @pytest.mark.asyncio
     async def test_sends_error_embed_on_transform_failure(self, cog):
@@ -98,14 +114,14 @@ class TestRunPipeline:
         )
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
-        assert any(isinstance(c, RetryIssueButton) for c in view.children)
+        assert any(isinstance(c, RetryButton) for c in view.children)
 
     @pytest.mark.asyncio
     async def test_repo_not_installed_sends_error_embed(self, cog):
-        interaction = _mock_interaction()
-        interaction.client.github.check_repo_installation = AsyncMock(
+        cog.handler.github.check_repo_installation = AsyncMock(
             side_effect=RepoNotInstalled("acme", "widgets")
         )
+        interaction = _mock_interaction()
         await cog._run_pipeline(
             interaction,
             repo="acme/widgets",
@@ -130,8 +146,70 @@ class TestRunPipeline:
             messages=["user1: msg"],
             latest_message_link=None,
         )
-        interaction.client.github.check_repo_installation.assert_awaited_once()
+        cog.handler.github.check_repo_installation.assert_awaited_once()
         cog.transform.run.assert_awaited_once()
+
+
+class TestCreateIssueHandlerRetry:
+    @pytest.mark.asyncio
+    async def test_on_retry_shows_loading_then_result(self):
+        fake = FakeTransform(output_text="# New Title\nNew body")
+        handler = CreateIssueHandler(transform=fake, github=AsyncMock())
+
+        cached = make_cached()
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        await handler.on_retry(interaction, cached)
+
+        # Shows loading state first
+        interaction.response.edit_message.assert_awaited_once()
+        loading_view = interaction.response.edit_message.call_args.kwargs["view"]
+        assert len(loading_view.children) == 1
+        assert loading_view.children[0].disabled is True
+
+        # Then replaces with result
+        interaction.edit_original_response.assert_awaited_once()
+        call_kwargs = interaction.edit_original_response.call_args.kwargs
+        assert call_kwargs["embed"].description == "# New Title\nNew body"
+        assert isinstance(call_kwargs["view"], PreviewView)
+
+    @pytest.mark.asyncio
+    async def test_on_retry_transform_error_shows_error_view(self):
+        mock_transform = AsyncMock()
+        mock_transform.run = AsyncMock(
+            side_effect=RuntimeError("503 Service Unavailable")
+        )
+        handler = CreateIssueHandler(transform=mock_transform, github=AsyncMock())
+
+        cached = make_cached()
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        await handler.on_retry(interaction, cached)
+
+        interaction.edit_original_response.assert_awaited_once()
+        call_kwargs = interaction.edit_original_response.call_args.kwargs
+        assert "503 Service Unavailable" in call_kwargs["embed"].description
+        assert isinstance(call_kwargs["view"], ErrorView)
+
+    @pytest.mark.asyncio
+    async def test_on_retry_error_caches_new_key_for_re_retry(self):
+        mock_transform = AsyncMock()
+        mock_transform.run = AsyncMock(side_effect=RuntimeError("fail"))
+        handler = CreateIssueHandler(transform=mock_transform, github=AsyncMock())
+
+        cached = make_cached()
+        original_key = cache_pipeline_data(cached)
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        await handler.on_retry(interaction, cached)
+
+        view = interaction.edit_original_response.call_args.kwargs["view"]
+        retry_btn = [c for c in view.children if isinstance(c, RetryButton)][0]
+        assert retry_btn.retry_key != original_key
 
 
 class TestCreateIssueCog:
@@ -224,6 +302,19 @@ class TestCreateIssueCog:
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
+    async def test_command_sends_preview_with_retry_button(self, mock_fetch, cog):
+        mock_fetch.return_value = self._mock_fetch_result()
+        interaction = self._mock_interaction()
+
+        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
+
+        interaction.followup.send.assert_awaited_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        view = call_kwargs["view"]
+        assert any(isinstance(c, RetryButton) for c in view.children)
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_transform_error_sends_error_embed(self, mock_fetch, cog):
         mock_fetch.return_value = self._mock_fetch_result()
         cog.transform.run.side_effect = RuntimeError("Gemini 503")
@@ -237,7 +328,7 @@ class TestCreateIssueCog:
         assert "Gemini 503" in call_kwargs["embed"].description
         assert isinstance(call_kwargs["view"], ErrorView)
         assert any(
-            isinstance(c, RetryIssueButton) for c in call_kwargs["view"].children
+            isinstance(c, RetryButton) for c in call_kwargs["view"].children
         )
 
     @pytest.mark.asyncio
@@ -265,29 +356,29 @@ class TestCreateIssueCog:
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
 
-class TestIssuePreviewView:
-    def test_preview_view_contains_create_button(self):
-        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
-        assert any(isinstance(c, CreateIssueButton) for c in view.children)
+class TestPreviewView:
+    def test_preview_view_contains_confirm_button(self):
+        view = PreviewView(cmd_type="issue", cache_key="k1")
+        assert any(isinstance(c, ConfirmButton) for c in view.children)
 
     def test_preview_view_contains_cancel_button(self):
-        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
-        assert any(isinstance(c, CancelIssueButton) for c in view.children)
+        view = PreviewView(cmd_type="issue", cache_key="k1")
+        assert any(isinstance(c, CancelButton) for c in view.children)
 
     def test_preview_view_has_no_timeout(self):
-        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
+        view = PreviewView(cmd_type="issue", cache_key="k1")
         assert view.timeout is None
 
     def test_preview_view_is_persistent(self):
-        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
+        view = PreviewView(cmd_type="issue", cache_key="k1")
         assert view.is_persistent()
 
     def test_preview_view_contains_retry_button(self):
-        view = IssuePreviewView(owner="o", repo="r", cache_key="abc123")
-        assert any(isinstance(c, RetryIssueButton) for c in view.children)
+        view = PreviewView(cmd_type="issue", cache_key="abc123")
+        assert any(isinstance(c, RetryButton) for c in view.children)
 
     def test_loading_view_has_single_disabled_button(self):
-        view = IssuePreviewView(owner="o", repo="r", loading=True)
+        view = PreviewView(cmd_type="issue", loading=True)
         assert len(view.children) == 1
         assert view.children[0].disabled is True
         assert "Regenerating" in view.children[0].label
@@ -305,7 +396,7 @@ class TestIssuePreviewView:
 
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
-        assert any(isinstance(c, RetryIssueButton) for c in view.children)
+        assert any(isinstance(c, RetryButton) for c in view.children)
 
 
 class TestCreateIssueModal:
@@ -388,10 +479,11 @@ class TestCreateIssueModal:
 
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
-        create_btn = [c for c in view.children if isinstance(c, CreateIssueButton)][0]
-        cached = get_cached_pipeline_data(create_btn.cache_key)
+        confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
+        cached = get_cached_pipeline_data(confirm_btn.cache_key)
         assert (
-            cached.metadata.latest_message_link == "https://discord.com/channels/1/2/3"
+            cached.extra["latest_message_link"]
+            == "https://discord.com/channels/1/2/3"
         )
 
     @pytest.mark.asyncio
@@ -410,9 +502,9 @@ class TestCreateIssueModal:
 
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
-        create_btn = [c for c in view.children if isinstance(c, CreateIssueButton)][0]
-        cached = get_cached_pipeline_data(create_btn.cache_key)
-        assert cached.metadata.latest_message_link is None
+        confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
+        cached = get_cached_pipeline_data(confirm_btn.cache_key)
+        assert cached.extra["latest_message_link"] is None
 
     @pytest.mark.asyncio
     async def test_on_error_sends_ephemeral_error(self, cog):
@@ -441,7 +533,7 @@ class TestContextMenu:
     def test_context_menu_registered_on_tree(self, bot):
         mock_transform = AsyncMock()
         mock_transform.run.return_value = MagicMock(input="# Title\nBody", context={})
-        CreateIssueCog(bot, transform=mock_transform)
+        CreateIssueCog(bot, transform=mock_transform, github=AsyncMock())
         bot.tree.add_command.assert_called_once()
         cmd = bot.tree.add_command.call_args.args[0]
         assert cmd.name == "Create Issue"

@@ -6,26 +6,139 @@ from discord import app_commands
 from discord.errors import NotFound
 from discord.ext import commands
 
-from src.models import CachedIssueData, IssueMetadata, PipelineData
+from src.cogs.registry import register_handler
+from src.models import CachedCommandData, CachedOutputData, PipelineData
 from src.output.discord import fetch_messages_with_metadata, resolve_mentions
-from src.output.github import RepoNotInstalled
+from src.output.github import RepoNotInstalled, append_footer
+from src.output.github_client import GitHubClient
 from src.transform.protocol import Transform
 from src.ui import (
-    CancelIssueButton,
-    CreateIssueButton,
+    DeleteView,
     ErrorView,
-    RetryIssueButton,
+    OutputErrorView,
+    PreviewView,
     build_error_embed,
     cache_pipeline_data,
 )
 
 logger = logging.getLogger(__name__)
 
+CMD_TYPE = "issue"
+
+
+class CreateIssueHandler:
+    """Implements CommandHandler for issue creation."""
+
+    def __init__(self, transform: Transform, github: GitHubClient) -> None:
+        self.transform = transform
+        self.github = github
+
+    async def on_confirm(
+        self, interaction: discord.Interaction, cached: CachedCommandData
+    ) -> None:
+        issue_body = interaction.message.embeds[0].description
+        lines = issue_body.strip().split("\n", 1)
+        title = lines[0].lstrip("# ").strip()
+        body = lines[1].strip() if len(lines) > 1 else ""
+
+        body = append_footer(
+            body,
+            cached.extra["author_username"],
+            cached.extra.get("latest_message_link"),
+        )
+
+        owner = cached.extra["owner"]
+        repo = cached.extra["repo"]
+
+        try:
+            url = await self.github.create_issue(owner, repo, title, body)
+        except Exception as exc:
+            logger.exception("Failed to create issue on GitHub")
+            github_data = CachedOutputData(
+                cmd_type=CMD_TYPE,
+                payload={
+                    "title": title,
+                    "body": body,
+                    "owner": owner,
+                    "repo": repo,
+                },
+            )
+            new_key = cache_pipeline_data(github_data)
+            embed = build_error_embed(exc)
+            view = OutputErrorView(cmd_type=CMD_TYPE, retry_key=new_key)
+            await interaction.response.edit_message(embed=embed, view=view)
+            return
+
+        await interaction.response.edit_message(
+            content=f"Issue created: {url}", view=None
+        )
+        await interaction.channel.send(
+            content=f"Issue created: {url}", view=DeleteView()
+        )
+
+    async def on_retry(
+        self, interaction: discord.Interaction, cached: CachedCommandData
+    ) -> None:
+        loading_view = PreviewView(cmd_type=CMD_TYPE, loading=True)
+        await interaction.response.edit_message(view=loading_view)
+
+        new_key = cache_pipeline_data(cached)
+
+        try:
+            result = await self.transform.run(cached.pipeline_data)
+        except Exception as exc:
+            logger.exception("Transform failed in retry")
+            embed = build_error_embed(exc)
+            view = ErrorView(cmd_type=CMD_TYPE, retry_key=new_key)
+            await interaction.edit_original_response(embed=embed, view=view)
+            return
+
+        view = PreviewView(
+            cmd_type=CMD_TYPE, cache_key=new_key, confirm_label="Create"
+        )
+        embed = discord.Embed(description=result.input)
+        await interaction.edit_original_response(embed=embed, view=view)
+
+    async def on_output_retry(
+        self, interaction: discord.Interaction, cached: CachedOutputData
+    ) -> None:
+        title = cached.payload["title"]
+        body = cached.payload["body"]
+        owner = cached.payload["owner"]
+        repo = cached.payload["repo"]
+
+        try:
+            url = await self.github.create_issue(owner, repo, title, body)
+        except Exception as exc:
+            logger.exception("GitHub retry failed")
+            new_data = CachedOutputData(
+                cmd_type=CMD_TYPE,
+                payload={
+                    "title": title,
+                    "body": body,
+                    "owner": owner,
+                    "repo": repo,
+                },
+            )
+            new_key = cache_pipeline_data(new_data)
+            embed = build_error_embed(exc)
+            view = OutputErrorView(cmd_type=CMD_TYPE, retry_key=new_key)
+            await interaction.response.edit_message(embed=embed, view=view)
+            return
+
+        await interaction.response.edit_message(
+            content=f"Issue created: {url}", embed=None, view=None
+        )
+        await interaction.channel.send(
+            content=f"Issue created: {url}", view=DeleteView()
+        )
+
 
 async def run_pipeline(
     interaction: discord.Interaction,
     *,
     transform: Transform,
+    github: GitHubClient,
     repo: str,
     topic: str,
     messages: list[str],
@@ -36,15 +149,11 @@ async def run_pipeline(
         context={"messages": messages},
         input=topic,
     )
-    metadata = IssueMetadata(
-        author_username=interaction.user.display_name,
-        latest_message_link=latest_message_link,
-    )
 
     owner, repo_name = repo.split("/", 1)
 
     try:
-        await interaction.client.github.check_repo_installation(owner, repo_name)
+        await github.check_repo_installation(owner, repo_name)
     except RepoNotInstalled:
         embed = discord.Embed(
             title="Repository not available",
@@ -57,29 +166,43 @@ async def run_pipeline(
         await interaction.followup.send(embed=embed, ephemeral=ephemeral)
         return
 
-    retry_key = cache_pipeline_data(
-        CachedIssueData(pipeline_data=data, metadata=metadata)
+    cached = CachedCommandData(
+        cmd_type=CMD_TYPE,
+        pipeline_data=data,
+        extra={
+            "author_username": interaction.user.display_name,
+            "latest_message_link": latest_message_link,
+            "owner": owner,
+            "repo": repo_name,
+        },
     )
+    retry_key = cache_pipeline_data(cached)
 
     try:
         result = await transform.run(data)
     except Exception as exc:
         logger.exception("Transform failed")
         embed = build_error_embed(exc)
-        view = ErrorView(owner=owner, repo=repo_name, retry_key=retry_key)
+        view = ErrorView(cmd_type=CMD_TYPE, retry_key=retry_key)
         await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
         return
 
-    view = IssuePreviewView(owner=owner, repo=repo_name, cache_key=retry_key)
+    view = PreviewView(
+        cmd_type=CMD_TYPE, cache_key=retry_key, confirm_label="Create"
+    )
 
     embed = discord.Embed(description=result.input)
     await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
 
 
 class CreateIssueCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, transform: Transform) -> None:
+    def __init__(
+        self, bot: commands.Bot, transform: Transform, github: GitHubClient
+    ) -> None:
         self.bot = bot
         self.transform = transform
+        self.handler = CreateIssueHandler(transform, github)
+        register_handler(CMD_TYPE, self.handler)
         self.ctx_menu = app_commands.ContextMenu(
             name="Create Issue",
             callback=self.create_issue_context_menu,
@@ -182,6 +305,7 @@ class CreateIssueCog(commands.Cog):
         await run_pipeline(
             interaction,
             transform=self.transform,
+            github=self.handler.github,
             repo=repo,
             topic=topic,
             messages=messages,
@@ -225,63 +349,58 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        t0 = time.monotonic()
         await interaction.response.defer(ephemeral=True)
 
         n = int(self.n.value or "20")
-        resolved_content = resolve_mentions(
-            self.target_message.content,
-            self.target_message.mentions,
-            self.target_message.role_mentions,
-            self.target_message.channel_mentions,
-        )
-        target_formatted = (
-            f"{self.target_message.author.display_name}: {resolved_content}"
+        logger.info(
+            "create-issue modal submitted: repo=%s topic=%r n=%d",
+            self.repo.value,
+            self.topic.value,
+            n,
         )
 
-        fetch_result = await fetch_messages_with_metadata(
-            self.target_message.channel, limit=n - 1, before=self.target_message
-        )
-        messages = [target_formatted] + fetch_result.messages
-
-        guild = self.target_message.guild
-        if guild is not None:
-            link = f"https://discord.com/channels/{guild.id}/{self.target_message.channel.id}/{self.target_message.id}"
-        else:
-            link = None
-
-        await self.cog._run_pipeline(
-            interaction,
-            repo=self.repo.value,
-            topic=self.topic.value,
-            messages=messages,
-            latest_message_link=link,
-        )
-
-
-class IssuePreviewView(discord.ui.View):
-    def __init__(
-        self,
-        owner: str,
-        repo: str,
-        cache_key: str | None = None,
-        loading: bool = False,
-    ) -> None:
-        super().__init__(timeout=None)
-        if loading:
-            self.add_item(
-                discord.ui.Button(
-                    label="Regenerating\N{HORIZONTAL ELLIPSIS}",
-                    style=discord.ButtonStyle.blurple,
-                    disabled=True,
-                    custom_id="retry_loading",
-                )
+        try:
+            resolved_content = resolve_mentions(
+                self.target_message.content,
+                self.target_message.mentions,
+                self.target_message.role_mentions,
+                self.target_message.channel_mentions,
             )
-        else:
-            self.add_item(
-                CreateIssueButton(owner=owner, repo=repo, cache_key=cache_key or "")
+            target_formatted = (
+                f"{self.target_message.author.display_name}: {resolved_content}"
             )
-            self.add_item(CancelIssueButton(owner=owner, repo=repo))
-            if cache_key is not None:
-                self.add_item(
-                    RetryIssueButton(owner=owner, repo=repo, retry_key=cache_key)
-                )
+
+            logger.debug("Fetching %d messages before target", n - 1)
+            fetch_result = await fetch_messages_with_metadata(
+                self.target_message.channel, limit=n - 1, before=self.target_message
+            )
+            messages = [target_formatted] + fetch_result.messages
+            logger.debug(
+                "Fetched %d messages (%.0fms)",
+                len(messages),
+                (time.monotonic() - t0) * 1000,
+            )
+            logger.debug("Messages: \n%r\n===", messages)
+
+            guild = self.target_message.guild
+            if guild is not None:
+                link = f"https://discord.com/channels/{guild.id}/{self.target_message.channel.id}/{self.target_message.id}"
+            else:
+                link = None
+
+            await self.cog._run_pipeline(
+                interaction,
+                repo=self.repo.value,
+                topic=self.topic.value,
+                messages=messages,
+                latest_message_link=link,
+            )
+            logger.info(
+                "create-issue modal complete (%.0fms)",
+                (time.monotonic() - t0) * 1000,
+            )
+        except Exception as exc:
+            logger.exception("create-issue modal failed")
+            embed = build_error_embed(exc)
+            await interaction.followup.send(embed=embed, ephemeral=True)

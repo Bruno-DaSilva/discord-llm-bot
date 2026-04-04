@@ -6,12 +6,12 @@ from typing import Self
 
 import discord
 
-from src.models import CachedGitHubCreate, CachedIssueData
+from src.models import CachedCommandData, CachedOutputData
 
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 86400  # 24 hours
-_retry_cache: dict[str, tuple[float, CachedIssueData]] = {}
+_retry_cache: dict[str, tuple[float, CachedCommandData | CachedOutputData]] = {}
 
 
 def _evict_expired() -> None:
@@ -21,7 +21,7 @@ def _evict_expired() -> None:
         del _retry_cache[k]
 
 
-def cache_pipeline_data(data: CachedIssueData | CachedGitHubCreate) -> str:
+def cache_pipeline_data(data: CachedCommandData | CachedOutputData) -> str:
     _evict_expired()
     key = uuid.uuid4().hex[:8]
     _retry_cache[key] = (time.monotonic(), data)
@@ -30,7 +30,7 @@ def cache_pipeline_data(data: CachedIssueData | CachedGitHubCreate) -> str:
 
 def get_cached_pipeline_data(
     key: str,
-) -> CachedIssueData | CachedGitHubCreate | None:
+) -> CachedCommandData | CachedOutputData | None:
     entry = _retry_cache.get(key)
     if entry is None:
         return None
@@ -69,19 +69,25 @@ class DeleteView(discord.ui.View):
         self.add_item(DeleteButton())
 
 
-class CreateIssueButton(
+# ---------------------------------------------------------------------------
+# Generic command buttons — dispatch via cmd_type to registered handlers
+# ---------------------------------------------------------------------------
+
+
+class ConfirmButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"create_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
+    template=r"confirm:(?P<cmd_type>[^:]+):(?P<key>.+)",
 ):
-    def __init__(self, owner: str, repo: str, cache_key: str) -> None:
-        self.owner = owner
-        self.repo = repo
+    def __init__(
+        self, cmd_type: str, cache_key: str, *, label: str = "Confirm"
+    ) -> None:
+        self.cmd_type = cmd_type
         self.cache_key = cache_key
         super().__init__(
             discord.ui.Button(
-                label="Create",
+                label=label,
                 style=discord.ButtonStyle.green,
-                custom_id=f"create_issue:{owner}/{repo}/{cache_key}",
+                custom_id=f"confirm:{cmd_type}:{cache_key}",
             )
         )
 
@@ -92,10 +98,10 @@ class CreateIssueButton(
         item: discord.ui.Button,
         match: re.Match[str],
     ) -> Self:
-        return cls(owner=match["owner"], repo=match["repo"], cache_key=match["key"])
+        return cls(cmd_type=match["cmd_type"], cache_key=match["key"])
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        logger.info("Create button pressed: %s/%s", self.owner, self.repo)
+        logger.info("Confirm button pressed: cmd_type=%s", self.cmd_type)
 
         cached = get_cached_pipeline_data(self.cache_key)
         if cached is None:
@@ -105,51 +111,31 @@ class CreateIssueButton(
             )
             return
 
-        issue_body = interaction.message.embeds[0].description
-        lines = issue_body.strip().split("\n", 1)
-        title = lines[0].lstrip("# ").strip()
-        body = lines[1].strip() if len(lines) > 1 else ""
+        from src.cogs.registry import get_handler
 
-        from src.output.github import append_footer
-
-        body = append_footer(
-            body, cached.metadata.author_username, cached.metadata.latest_message_link
-        )
-
-        try:
-            url = await interaction.client.github.create_issue(
-                self.owner, self.repo, title, body
+        handler = get_handler(self.cmd_type)
+        if handler is None:
+            await interaction.response.send_message(
+                "Unknown command type.",
+                ephemeral=True,
             )
-        except Exception as exc:
-            logger.exception("Failed to create issue on GitHub")
-            github_data = CachedGitHubCreate(title=title, body=body)
-            new_key = cache_pipeline_data(github_data)
-            embed = build_error_embed(exc)
-            view = GitHubErrorView(owner=self.owner, repo=self.repo, retry_key=new_key)
-            await interaction.response.edit_message(embed=embed, view=view)
             return
 
-        await interaction.response.edit_message(
-            content=f"Issue created: {url}", view=None
-        )
-        await interaction.channel.send(
-            content=f"Issue created: {url}", view=DeleteView()
-        )
+        await handler.on_confirm(interaction, cached)
 
 
-class RetryIssueButton(
+class RetryButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"retry_issue:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
+    template=r"retry:(?P<cmd_type>[^:]+):(?P<key>.+)",
 ):
-    def __init__(self, owner: str, repo: str, retry_key: str) -> None:
-        self.owner = owner
-        self.repo = repo
+    def __init__(self, cmd_type: str, retry_key: str) -> None:
+        self.cmd_type = cmd_type
         self.retry_key = retry_key
         super().__init__(
             discord.ui.Button(
                 label="Retry",
                 style=discord.ButtonStyle.blurple,
-                custom_id=f"retry_issue:{owner}/{repo}/{retry_key}",
+                custom_id=f"retry:{cmd_type}:{retry_key}",
             )
         )
 
@@ -160,56 +146,42 @@ class RetryIssueButton(
         item: discord.ui.Button,
         match: re.Match[str],
     ) -> Self:
-        return cls(
-            owner=match["owner"],
-            repo=match["repo"],
-            retry_key=match["key"],
-        )
+        return cls(cmd_type=match["cmd_type"], retry_key=match["key"])
 
     async def callback(self, interaction: discord.Interaction) -> None:
         data = get_cached_pipeline_data(self.retry_key)
-        if data is None:
+        if data is None or not isinstance(data, CachedCommandData):
             await interaction.response.send_message(
                 "Session expired. Please run the command again.",
                 ephemeral=True,
             )
             return
 
-        from src.cogs.create_issue import IssuePreviewView
+        from src.cogs.registry import get_handler
 
-        loading_view = IssuePreviewView(owner=self.owner, repo=self.repo, loading=True)
-        await interaction.response.edit_message(view=loading_view)
-
-        cog = interaction.client.get_cog("CreateIssueCog")
-        new_key = cache_pipeline_data(data)
-
-        try:
-            result = await cog.transform.run(data.pipeline_data)
-        except Exception as exc:
-            logger.exception("Transform failed in retry")
-            embed = build_error_embed(exc)
-            view = ErrorView(owner=self.owner, repo=self.repo, retry_key=new_key)
-            await interaction.edit_original_response(embed=embed, view=view)
+        handler = get_handler(self.cmd_type)
+        if handler is None:
+            await interaction.response.send_message(
+                "Unknown command type.",
+                ephemeral=True,
+            )
             return
 
-        view = IssuePreviewView(owner=self.owner, repo=self.repo, cache_key=new_key)
-
-        embed = discord.Embed(description=result.input)
-        await interaction.edit_original_response(embed=embed, view=view)
+        await handler.on_retry(interaction, data)
 
 
-class CancelIssueButton(
+class CancelButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"cancel_issue:(?P<owner>[^/]+)/(?P<repo>.+)",
+    template=r"cancel:(?P<cmd_type>[^:]+):(?P<key>.+)",
 ):
-    def __init__(self, owner: str, repo: str) -> None:
-        self.owner = owner
-        self.repo = repo
+    def __init__(self, cmd_type: str, cache_key: str) -> None:
+        self.cmd_type = cmd_type
+        self.cache_key = cache_key
         super().__init__(
             discord.ui.Button(
                 label="Cancel",
                 style=discord.ButtonStyle.red,
-                custom_id=f"cancel_issue:{owner}/{repo}",
+                custom_id=f"cancel:{cmd_type}:{cache_key}",
             )
         )
 
@@ -220,28 +192,27 @@ class CancelIssueButton(
         item: discord.ui.Button,
         match: re.Match[str],
     ) -> Self:
-        return cls(owner=match["owner"], repo=match["repo"])
+        return cls(cmd_type=match["cmd_type"], cache_key=match["key"])
 
     async def callback(self, interaction: discord.Interaction) -> None:
         logger.info("Cancel button pressed")
         await interaction.response.edit_message(
-            content="Issue creation cancelled.", embed=None, view=None
+            content="Cancelled.", embed=None, view=None
         )
 
 
-class RetryGitHubButton(
+class OutputRetryButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"retry_github:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
+    template=r"output_retry:(?P<cmd_type>[^:]+):(?P<key>.+)",
 ):
-    def __init__(self, owner: str, repo: str, retry_key: str) -> None:
-        self.owner = owner
-        self.repo = repo
+    def __init__(self, cmd_type: str, retry_key: str) -> None:
+        self.cmd_type = cmd_type
         self.retry_key = retry_key
         super().__init__(
             discord.ui.Button(
                 label="Retry",
                 style=discord.ButtonStyle.blurple,
-                custom_id=f"retry_github:{owner}/{repo}/{retry_key}",
+                custom_id=f"output_retry:{cmd_type}:{retry_key}",
             )
         )
 
@@ -252,51 +223,74 @@ class RetryGitHubButton(
         item: discord.ui.Button,
         match: re.Match[str],
     ) -> Self:
-        return cls(
-            owner=match["owner"],
-            repo=match["repo"],
-            retry_key=match["key"],
-        )
+        return cls(cmd_type=match["cmd_type"], retry_key=match["key"])
 
     async def callback(self, interaction: discord.Interaction) -> None:
         cached = get_cached_pipeline_data(self.retry_key)
-        if not isinstance(cached, CachedGitHubCreate):
+        if not isinstance(cached, CachedOutputData):
             await interaction.response.send_message(
                 "Session expired. Please run the command again.",
                 ephemeral=True,
             )
             return
 
-        try:
-            url = await interaction.client.github.create_issue(
-                self.owner, self.repo, cached.title, cached.body
+        from src.cogs.registry import get_handler
+
+        handler = get_handler(self.cmd_type)
+        if handler is None:
+            await interaction.response.send_message(
+                "Unknown command type.",
+                ephemeral=True,
             )
-        except Exception as exc:
-            logger.exception("GitHub retry failed")
-            new_data = CachedGitHubCreate(title=cached.title, body=cached.body)
-            new_key = cache_pipeline_data(new_data)
-            embed = build_error_embed(exc)
-            view = GitHubErrorView(owner=self.owner, repo=self.repo, retry_key=new_key)
-            await interaction.response.edit_message(embed=embed, view=view)
             return
 
-        await interaction.response.edit_message(
-            content=f"Issue created: {url}", embed=None, view=None
-        )
-        await interaction.channel.send(
-            content=f"Issue created: {url}", view=DeleteView()
-        )
+        await handler.on_output_retry(interaction, cached)
 
 
-class GitHubErrorView(discord.ui.View):
-    def __init__(self, owner: str, repo: str, retry_key: str) -> None:
+# ---------------------------------------------------------------------------
+# Generic views
+# ---------------------------------------------------------------------------
+
+
+class PreviewView(discord.ui.View):
+    def __init__(
+        self,
+        cmd_type: str,
+        cache_key: str | None = None,
+        *,
+        confirm_label: str = "Confirm",
+        loading: bool = False,
+    ) -> None:
         super().__init__(timeout=None)
-        self.add_item(RetryGitHubButton(owner=owner, repo=repo, retry_key=retry_key))
-        self.add_item(CancelIssueButton(owner=owner, repo=repo))
+        if loading:
+            self.add_item(
+                discord.ui.Button(
+                    label="Regenerating\N{HORIZONTAL ELLIPSIS}",
+                    style=discord.ButtonStyle.blurple,
+                    disabled=True,
+                    custom_id="retry_loading",
+                )
+            )
+        else:
+            self.add_item(
+                ConfirmButton(
+                    cmd_type, cache_key or "", label=confirm_label
+                )
+            )
+            self.add_item(CancelButton(cmd_type, cache_key or ""))
+            if cache_key is not None:
+                self.add_item(RetryButton(cmd_type, retry_key=cache_key))
 
 
 class ErrorView(discord.ui.View):
-    def __init__(self, owner: str, repo: str, retry_key: str) -> None:
+    def __init__(self, cmd_type: str, retry_key: str) -> None:
         super().__init__(timeout=None)
-        self.add_item(RetryIssueButton(owner=owner, repo=repo, retry_key=retry_key))
-        self.add_item(CancelIssueButton(owner=owner, repo=repo))
+        self.add_item(RetryButton(cmd_type, retry_key=retry_key))
+        self.add_item(CancelButton(cmd_type, cache_key=retry_key))
+
+
+class OutputErrorView(discord.ui.View):
+    def __init__(self, cmd_type: str, retry_key: str) -> None:
+        super().__init__(timeout=None)
+        self.add_item(OutputRetryButton(cmd_type, retry_key=retry_key))
+        self.add_item(CancelButton(cmd_type, cache_key=retry_key))

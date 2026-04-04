@@ -1,27 +1,36 @@
-from src.models import CachedIssueData, IssueMetadata, PipelineData
+from src.models import CachedCommandData, CachedOutputData, PipelineData
 
 
-class TestIssueMetadata:
-    def test_construct_with_all_fields(self):
-        meta = IssueMetadata(
-            author_username="alice",
-            latest_message_link="https://discord.com/channels/1/2/3",
-        )
-        assert meta.author_username == "alice"
-        assert meta.latest_message_link == "https://discord.com/channels/1/2/3"
-
-    def test_link_can_be_none(self):
-        meta = IssueMetadata(author_username="bob", latest_message_link=None)
-        assert meta.latest_message_link is None
-
-
-class TestCachedIssueData:
-    def test_construct_with_pipeline_and_metadata(self):
+class TestCachedCommandData:
+    def test_construct_with_pipeline_and_extra(self):
         pipeline = PipelineData(input="topic", context={"messages": ["msg"]})
-        meta = IssueMetadata(author_username="alice", latest_message_link=None)
-        cached = CachedIssueData(pipeline_data=pipeline, metadata=meta)
+        cached = CachedCommandData(
+            cmd_type="issue",
+            pipeline_data=pipeline,
+            extra={"author_username": "alice", "latest_message_link": None},
+        )
         assert cached.pipeline_data is pipeline
-        assert cached.metadata is meta
+        assert cached.cmd_type == "issue"
+        assert cached.extra["author_username"] == "alice"
+
+    def test_extra_defaults_to_empty_dict(self):
+        pipeline = PipelineData(input="topic")
+        cached = CachedCommandData(cmd_type="test", pipeline_data=pipeline)
+        assert cached.extra == {}
+
+
+class TestCachedOutputData:
+    def test_construct_with_payload(self):
+        cached = CachedOutputData(
+            cmd_type="issue",
+            payload={"title": "Bug", "body": "Details"},
+        )
+        assert cached.cmd_type == "issue"
+        assert cached.payload["title"] == "Bug"
+
+    def test_payload_defaults_to_empty_dict(self):
+        cached = CachedOutputData(cmd_type="test")
+        assert cached.payload == {}
 
 
 class TestPipelineData:

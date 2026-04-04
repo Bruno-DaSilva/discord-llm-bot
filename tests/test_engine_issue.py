@@ -5,7 +5,7 @@ import pytest
 
 from src.cogs.engine_issue import EngineIssueCog, EngineIssueModal, REPO
 from src.output.discord import FetchResult
-from src.ui import CreateIssueButton, ErrorView
+from src.ui import ConfirmButton, ErrorView
 
 from tests.conftest import FakeTransform, mock_interaction as _mock_interaction
 
@@ -14,7 +14,12 @@ from tests.conftest import FakeTransform, mock_interaction as _mock_interaction
 def cog(bot):
     fake = FakeTransform()
     mock_transform = AsyncMock(wraps=fake)
-    return EngineIssueCog(bot, transform=mock_transform)
+    mock_github = AsyncMock()
+    mock_github.check_repo_installation = AsyncMock()
+    mock_github.create_issue = AsyncMock(
+        return_value="https://github.com/o/r/issues/1"
+    )
+    return EngineIssueCog(bot, transform=mock_transform, github=mock_github)
 
 
 class TestEngineIssueCogCommand:
@@ -71,9 +76,12 @@ class TestEngineIssueCog:
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
-        create_btn = [c for c in view.children if isinstance(c, CreateIssueButton)][0]
-        assert create_btn.owner == "beyond-all-reason"
-        assert create_btn.repo == "recoilengine"
+        confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
+        from src.ui import get_cached_pipeline_data
+
+        cached = get_cached_pipeline_data(confirm_btn.cache_key)
+        assert cached.extra["owner"] == "beyond-all-reason"
+        assert cached.extra["repo"] == "recoilengine"
 
     @pytest.mark.asyncio
     @patch("src.cogs.engine_issue.fetch_messages_with_metadata")
@@ -157,9 +165,12 @@ class TestEngineIssueModal:
         await modal.on_submit(interaction)
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
-        create_btn = [c for c in view.children if isinstance(c, CreateIssueButton)][0]
-        assert create_btn.owner == "beyond-all-reason"
-        assert create_btn.repo == "recoilengine"
+        confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
+        from src.ui import get_cached_pipeline_data
+
+        cached = get_cached_pipeline_data(confirm_btn.cache_key)
+        assert cached.extra["owner"] == "beyond-all-reason"
+        assert cached.extra["repo"] == "recoilengine"
 
     @pytest.mark.asyncio
     @patch("src.cogs.engine_issue.fetch_messages_with_metadata")
@@ -182,7 +193,7 @@ class TestEngineIssueModal:
 class TestEngineContextMenu:
     def test_context_menu_registered_on_tree(self, bot):
         mock_transform = AsyncMock()
-        EngineIssueCog(bot, transform=mock_transform)
+        EngineIssueCog(bot, transform=mock_transform, github=AsyncMock())
         bot.tree.add_command.assert_called_once()
         cmd = bot.tree.add_command.call_args.args[0]
         assert cmd.name == "Engine Issue"

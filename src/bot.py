@@ -13,11 +13,11 @@ from src.output.github import GitHubService
 from src.output.github_auth import GitHubAppAuth
 from src.transform.gemini import IssueGeneratorTransform
 from src.ui import (
-    CancelIssueButton,
-    CreateIssueButton,
+    CancelButton,
+    ConfirmButton,
     DeleteView,
-    RetryGitHubButton,
-    RetryIssueButton,
+    OutputRetryButton,
+    RetryButton,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,10 @@ class IssueBot(commands.Bot):
         self._github_installation_id = github_installation_id
         super().__init__(**kwargs)
 
-    # todo not sure what this abstraction is intended for - seems like at minimum poor naming
     async def setup_hook(self) -> None:
         self.add_view(DeleteView())
         self.add_dynamic_items(
-            CreateIssueButton, CancelIssueButton, RetryIssueButton, RetryGitHubButton
+            ConfirmButton, RetryButton, CancelButton, OutputRetryButton
         )
 
         self.http_client = httpx.AsyncClient()
@@ -70,6 +69,7 @@ class IssueBot(commands.Bot):
         cog = CreateIssueCog(
             self,
             transform=transform,
+            github=self.github,
         )
         await self.add_cog(cog)
         logger.info("CreateIssueCog loaded")
@@ -77,6 +77,7 @@ class IssueBot(commands.Bot):
         engine_cog = EngineIssueCog(
             self,
             transform=transform,
+            github=self.github,
         )
         await self.add_cog(engine_cog)
         logger.info("EngineIssueCog loaded")

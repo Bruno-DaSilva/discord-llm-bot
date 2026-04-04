@@ -6,7 +6,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from discord.ext import commands
 
-from src.models import CachedIssueData, IssueMetadata, PipelineData
+from src.models import CachedCommandData, PipelineData
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +123,15 @@ def mock_interaction():
     return interaction
 
 
-def make_cached(input="topic", messages=None, author="tester", link=None):
+def make_cached(
+    input="topic", messages=None, author="tester", link=None, cmd_type="issue"
+):
     pipeline = PipelineData(input=input, context={"messages": messages or ["msg"]})
-    metadata = IssueMetadata(author_username=author, latest_message_link=link)
-    return CachedIssueData(pipeline_data=pipeline, metadata=metadata)
+    return CachedCommandData(
+        cmd_type=cmd_type,
+        pipeline_data=pipeline,
+        extra={"author_username": author, "latest_message_link": link},
+    )
 
 
 # ---------------------------------------------------------------------------
