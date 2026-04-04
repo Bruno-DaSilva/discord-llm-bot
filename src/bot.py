@@ -9,7 +9,6 @@ from discord.ext import commands
 
 from src.cogs.create_issue import CreateIssueCog
 from src.cogs.engine_issue import EngineIssueCog
-from src.cogs.test_issue import DebugIssueCog
 from src.output.github_auth import GitHubAppAuth
 from src.transform.gemini import IssueGeneratorTransform
 from src.ui import (
@@ -79,13 +78,6 @@ class IssueBot(commands.Bot):
         )
         await self.add_cog(engine_cog)
         logger.info("EngineIssueCog loaded")
-
-        debug_cog = DebugIssueCog(
-            self,
-            transform=transform,
-        )
-        await self.add_cog(debug_cog)
-        logger.info("DebugIssueCog loaded")
 
         logger.info("Syncing command tree")
         await self.tree.sync()

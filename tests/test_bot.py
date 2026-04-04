@@ -61,7 +61,7 @@ class TestCreateBot:
             patch.object(bot.tree, "sync", new_callable=AsyncMock),
         ):
             await bot.setup_hook()
-            assert mock_add.await_count == 3
+            assert mock_add.await_count == 2
 
     @pytest.mark.asyncio
     async def test_setup_hook_syncs_tree(self, bot_kwargs):
