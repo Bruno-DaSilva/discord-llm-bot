@@ -50,7 +50,7 @@ class TestSetupLogging:
         handler = logging.getLogger().handlers[0]
         assert isinstance(handler.formatter, JsonFormatter)
 
-    @pytest.mark.parametrize("logger_name", ["httpx", "http"])
+    @pytest.mark.parametrize("logger_name", ["httpx", "httpcore"])
     def test_http_loggers_at_least_info(self, monkeypatch, logger_name):
         monkeypatch.delenv("LOG_LEVEL", raising=False)
         monkeypatch.delenv("LOG_FORMAT", raising=False)
