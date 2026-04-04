@@ -33,3 +33,4 @@ docker run --env-file .env discord-issue-bot
 See [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) for the pipeline design.
 
 todo add ability to add prompt ammendments per-channel. 
+todo add user/role permissions per-channel?

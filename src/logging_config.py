@@ -40,7 +40,7 @@ def setup_logging() -> None:
                 "httpx": {
                     "level": "WARNING",
                 },
-                "http": {
+                "httpcore": {
                     "level": "INFO",
                 },
             },
