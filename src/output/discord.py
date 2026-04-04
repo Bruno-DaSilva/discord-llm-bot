@@ -25,6 +25,26 @@ def resolve_mentions(
     return content
 
 
+def format_message(msg: discord.Message) -> str:
+    resolved_content = resolve_mentions(
+        msg.content, msg.mentions, msg.role_mentions, msg.channel_mentions
+    )
+    parts = [f"{msg.author.display_name}: {resolved_content}"]
+
+    for embed in msg.embeds:
+        embed_parts = []
+        if embed.title:
+            embed_parts.append(embed.title)
+        if embed.description:
+            embed_parts.append(embed.description)
+        for field in embed.fields:
+            embed_parts.append(f"{field.name}: {field.value}")
+        if embed_parts:
+            parts.append("[Embed] " + " | ".join(embed_parts))
+
+    return "\n".join(parts)
+
+
 async def fetch_messages_with_metadata(
     channel: discord.abc.Messageable, limit: int, before: discord.Message | None = None
 ) -> FetchResult:
@@ -35,10 +55,7 @@ async def fetch_messages_with_metadata(
     if before is not None:
         kwargs["before"] = before
     async for msg in channel.history(**kwargs):
-        resolved_content = resolve_mentions(
-            msg.content, msg.mentions, msg.role_mentions, msg.channel_mentions
-        )
-        messages.append(f"{msg.author.display_name}: {resolved_content}")
+        messages.append(format_message(msg))
         if first:
             latest_message_link = (
                 f"https://discord.com/channels/{msg.guild.id}/{msg.channel.id}/{msg.id}"

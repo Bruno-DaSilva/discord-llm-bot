@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.output.discord import fetch_messages_with_metadata, resolve_mentions
+from src.output.discord import fetch_messages_with_metadata, format_message, resolve_mentions
 
 
 class TestResolveMentions:
@@ -62,6 +62,66 @@ class TestResolveMentions:
         assert result == "hello <@999>"
 
 
+class TestFormatMessage:
+    def _make_msg(self, name="Alice", content="hello", embeds=None):
+        msg = MagicMock()
+        msg.author.display_name = name
+        msg.content = content
+        msg.mentions = []
+        msg.role_mentions = []
+        msg.channel_mentions = []
+        msg.embeds = embeds or []
+        return msg
+
+    def _make_embed(self, title=None, description=None, fields=None):
+        embed = MagicMock()
+        embed.title = title
+        embed.description = description
+        embed.fields = fields or []
+        return embed
+
+    def _make_field(self, name, value):
+        field = MagicMock()
+        field.name = name
+        field.value = value
+        return field
+
+    def test_plain_message_no_embeds(self):
+        msg = self._make_msg("Alice", "hello")
+        assert format_message(msg) == "Alice: hello"
+
+    def test_message_with_embed_title_and_description(self):
+        embed = self._make_embed(title="Issue Title", description="Some details")
+        msg = self._make_msg("Bot", "check this out", embeds=[embed])
+        result = format_message(msg)
+        assert result == "Bot: check this out\n[Embed] Issue Title | Some details"
+
+    def test_message_with_embed_fields(self):
+        fields = [self._make_field("Status", "Open"), self._make_field("Priority", "High")]
+        embed = self._make_embed(title="Ticket", fields=fields)
+        msg = self._make_msg("Bot", "", embeds=[embed])
+        result = format_message(msg)
+        assert result == "Bot: \n[Embed] Ticket | Status: Open | Priority: High"
+
+    def test_empty_embed_ignored(self):
+        embed = self._make_embed()
+        msg = self._make_msg("Bot", "text", embeds=[embed])
+        assert format_message(msg) == "Bot: text"
+
+    def test_multiple_embeds(self):
+        embed1 = self._make_embed(title="First")
+        embed2 = self._make_embed(description="Second desc")
+        msg = self._make_msg("Bot", "msg", embeds=[embed1, embed2])
+        result = format_message(msg)
+        assert result == "Bot: msg\n[Embed] First\n[Embed] Second desc"
+
+    def test_embed_with_only_description(self):
+        embed = self._make_embed(description="just a description")
+        msg = self._make_msg("Bot", "x", embeds=[embed])
+        result = format_message(msg)
+        assert result == "Bot: x\n[Embed] just a description"
+
+
 class TestFetchMessagesWithMetadata:
     def _make_msg(self, name, content, msg_id=100, guild_id=1, channel_id=2):
         msg = MagicMock()
@@ -70,6 +130,10 @@ class TestFetchMessagesWithMetadata:
         msg.id = msg_id
         msg.guild.id = guild_id
         msg.channel.id = channel_id
+        msg.embeds = []
+        msg.mentions = []
+        msg.role_mentions = []
+        msg.channel_mentions = []
         return msg
 
     @pytest.mark.asyncio
