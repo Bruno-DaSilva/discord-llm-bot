@@ -7,7 +7,7 @@ from discord.errors import NotFound
 from discord.ext import commands
 
 from src.models import CachedIssueData, IssueMetadata, PipelineData
-from src.output.discord import fetch_messages_with_metadata
+from src.output.discord import fetch_messages_with_metadata, resolve_mentions
 from src.transform.protocol import Transform
 from src.ui import (
     CancelIssueButton,
@@ -202,7 +202,13 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
         await interaction.response.defer(ephemeral=True)
 
         n = int(self.n.value or "20")
-        target_formatted = f"{self.target_message.author.display_name}: {self.target_message.content}"
+        resolved_content = resolve_mentions(
+            self.target_message.content,
+            self.target_message.mentions,
+            self.target_message.role_mentions,
+            self.target_message.channel_mentions,
+        )
+        target_formatted = f"{self.target_message.author.display_name}: {resolved_content}"
 
         fetch_result = await fetch_messages_with_metadata(
             self.target_message.channel, limit=n - 1, before=self.target_message

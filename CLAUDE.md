@@ -2,6 +2,22 @@
 
 Discord bot providing `/create-issue` slash command to generate GitHub issues from channel messages using Gemini AI. Built with discord.py, hosted in Docker.
 
+## Directory Structure
+
+```
+src/                — application source
+  bot.py            — composition root (entry point, env reads)
+  models.py         — shared data models (PipelineData)
+  ui.py             — Discord UI views
+  logging_config.py — logging setup
+  cogs/             — Discord slash commands
+  input/            — pipeline input layer (file reading)
+  transform/        — pipeline transform layer (incl LLM calls)
+  output/           — pipeline output layer (GitHub, Discord)
+tests/              — mirrors src/ as test_<module>.py
+doc/                — architecture & design docs
+```
+
 ## TDD Workflow (MANDATORY)
 
 1. **Write the failing test first** -- every new function or behavior starts with a test
