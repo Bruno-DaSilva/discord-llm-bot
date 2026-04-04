@@ -44,4 +44,5 @@ async def fetch_messages_with_metadata(
                 f"https://discord.com/channels/{msg.guild.id}/{msg.channel.id}/{msg.id}"
             )
             first = False
+    messages.reverse()
     return FetchResult(messages=messages, latest_message_link=latest_message_link)

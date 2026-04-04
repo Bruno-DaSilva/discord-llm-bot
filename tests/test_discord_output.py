@@ -73,20 +73,22 @@ class TestFetchMessagesWithMetadata:
         return msg
 
     @pytest.mark.asyncio
-    async def test_returns_messages_list(self):
-        msg1 = self._make_msg("Alice", "hello", msg_id=200)
-        msg2 = self._make_msg("Bob", "world", msg_id=100)
+    async def test_returns_messages_in_chronological_order(self):
+        # channel.history() yields newest-first; result should be oldest-first
+        newest = self._make_msg("Alice", "hello", msg_id=200)
+        oldest = self._make_msg("Bob", "world", msg_id=100)
         channel = MagicMock()
 
         async def mock_history(limit, **kwargs):
-            for m in [msg1, msg2]:
+            for m in [newest, oldest]:
                 yield m
 
         channel.history = mock_history
 
         result = await fetch_messages_with_metadata(channel, limit=10)
         assert len(result.messages) == 2
-        assert "Alice" in result.messages[0]
+        assert "Bob" in result.messages[0]
+        assert "Alice" in result.messages[1]
 
     @pytest.mark.asyncio
     async def test_latest_message_link_format(self):
