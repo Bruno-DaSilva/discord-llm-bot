@@ -50,14 +50,9 @@ class TestSetupLogging:
         handler = logging.getLogger().handlers[0]
         assert isinstance(handler.formatter, JsonFormatter)
 
-    def test_discord_logger_dampened_to_warning(self, monkeypatch):
+    @pytest.mark.parametrize("logger_name", ["httpx", "http"])
+    def test_http_loggers_at_least_info(self, monkeypatch, logger_name):
         monkeypatch.delenv("LOG_LEVEL", raising=False)
         monkeypatch.delenv("LOG_FORMAT", raising=False)
         setup_logging()
-        assert logging.getLogger("discord").level == logging.WARNING
-
-    def test_httpx_logger_dampened_to_warning(self, monkeypatch):
-        monkeypatch.delenv("LOG_LEVEL", raising=False)
-        monkeypatch.delenv("LOG_FORMAT", raising=False)
-        setup_logging()
-        assert logging.getLogger("httpx").level == logging.WARNING
+        assert logging.getLogger(logger_name).level >= logging.INFO

@@ -35,10 +35,13 @@ def setup_logging() -> None:
                     "level": log_level,
                 },
                 "discord": {
-                    "level": "WARNING",
+                    "level": "INFO",
                 },
                 "httpx": {
                     "level": "WARNING",
+                },
+                "http": {
+                    "level": "INFO",
                 },
             },
             "root": {
