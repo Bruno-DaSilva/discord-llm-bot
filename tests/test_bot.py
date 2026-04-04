@@ -4,7 +4,13 @@ import discord
 import pytest
 
 from src.bot import create_bot, _read_required_env
-from src.ui import CancelIssueButton, CreateIssueButton, DeleteView, RetryIssueButton
+from src.ui import (
+    CancelIssueButton,
+    CreateIssueButton,
+    DeleteView,
+    RetryGitHubButton,
+    RetryIssueButton,
+)
 
 from tests.conftest import TEST_PRIVATE_KEY_PEM
 
@@ -93,7 +99,7 @@ class TestCreateBot:
         ):
             await bot.setup_hook()
             mock_add_dynamic.assert_called_once_with(
-                CreateIssueButton, CancelIssueButton, RetryIssueButton
+                CreateIssueButton, CancelIssueButton, RetryIssueButton, RetryGitHubButton
             )
 
     @pytest.mark.asyncio

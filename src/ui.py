@@ -6,7 +6,7 @@ from typing import Self
 
 import discord
 
-from src.models import CachedIssueData
+from src.models import CachedGitHubCreate, CachedIssueData
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +21,16 @@ def _evict_expired() -> None:
         del _retry_cache[k]
 
 
-def cache_pipeline_data(data: CachedIssueData) -> str:
+def cache_pipeline_data(data: CachedIssueData | CachedGitHubCreate) -> str:
     _evict_expired()
     key = uuid.uuid4().hex[:8]
     _retry_cache[key] = (time.monotonic(), data)
     return key
 
 
-def get_cached_pipeline_data(key: str) -> CachedIssueData | None:
+def get_cached_pipeline_data(
+    key: str,
+) -> CachedIssueData | CachedGitHubCreate | None:
     entry = _retry_cache.get(key)
     if entry is None:
         return None
@@ -124,12 +126,15 @@ class CreateIssueButton(
                 body,
                 token,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Failed to create issue on GitHub")
-            await interaction.response.send_message(
-                "Failed to create issue on GitHub. Please try again.",
-                ephemeral=True,
+            github_data = CachedGitHubCreate(title=title, body=body)
+            new_key = cache_pipeline_data(github_data)
+            embed = build_error_embed(exc)
+            view = GitHubErrorView(
+                owner=self.owner, repo=self.repo, retry_key=new_key
             )
+            await interaction.response.edit_message(embed=embed, view=view)
             return
 
         await interaction.response.edit_message(
@@ -234,6 +239,82 @@ class CancelIssueButton(
         await interaction.response.edit_message(
             content="Issue creation cancelled.", embed=None, view=None
         )
+
+
+class RetryGitHubButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"retry_github:(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<key>.+)",
+):
+    def __init__(self, owner: str, repo: str, retry_key: str) -> None:
+        self.owner = owner
+        self.repo = repo
+        self.retry_key = retry_key
+        super().__init__(
+            discord.ui.Button(
+                label="Retry",
+                style=discord.ButtonStyle.blurple,
+                custom_id=f"retry_github:{owner}/{repo}/{retry_key}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+    ) -> Self:
+        return cls(
+            owner=match["owner"],
+            repo=match["repo"],
+            retry_key=match["key"],
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        cached = get_cached_pipeline_data(self.retry_key)
+        if not isinstance(cached, CachedGitHubCreate):
+            await interaction.response.send_message(
+                "Session expired. Please run the command again.",
+                ephemeral=True,
+            )
+            return
+
+        from src.output.github import create_issue
+
+        try:
+            token = await interaction.client.github_auth.get_token()
+            url = await create_issue(
+                interaction.client.http_client,
+                self.owner,
+                self.repo,
+                cached.title,
+                cached.body,
+                token,
+            )
+        except Exception as exc:
+            logger.exception("GitHub retry failed")
+            new_data = CachedGitHubCreate(title=cached.title, body=cached.body)
+            new_key = cache_pipeline_data(new_data)
+            embed = build_error_embed(exc)
+            view = GitHubErrorView(
+                owner=self.owner, repo=self.repo, retry_key=new_key
+            )
+            await interaction.response.edit_message(embed=embed, view=view)
+            return
+
+        await interaction.response.edit_message(
+            content=f"Issue created: {url}", embed=None, view=None
+        )
+        await interaction.channel.send(
+            content=f"Issue created: {url}", view=DeleteView()
+        )
+
+
+class GitHubErrorView(discord.ui.View):
+    def __init__(self, owner: str, repo: str, retry_key: str) -> None:
+        super().__init__(timeout=None)
+        self.add_item(RetryGitHubButton(owner=owner, repo=repo, retry_key=retry_key))
+        self.add_item(CancelIssueButton(owner=owner, repo=repo))
 
 
 class ErrorView(discord.ui.View):

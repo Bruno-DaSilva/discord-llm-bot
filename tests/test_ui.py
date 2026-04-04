@@ -4,12 +4,15 @@ import discord
 import pytest
 
 from src.models import PipelineData
+from src.models import CachedGitHubCreate
 from src.ui import (
     CancelIssueButton,
     CreateIssueButton,
     DeleteButton,
     DeleteView,
     ErrorView,
+    GitHubErrorView,
+    RetryGitHubButton,
     RetryIssueButton,
     build_error_embed,
     cache_pipeline_data,
@@ -139,7 +142,7 @@ class TestCreateIssueButton:
 
     @pytest.mark.asyncio
     @patch("src.output.github.create_issue", new_callable=AsyncMock)
-    async def test_callback_github_failure_sends_ephemeral_error(self, mock_create):
+    async def test_callback_github_failure_shows_error_with_retry(self, mock_create):
         mock_create.side_effect = RuntimeError("GitHub API down")
 
         cached = make_cached(author="alice", link="https://discord.com/channels/1/2/3")
@@ -161,11 +164,12 @@ class TestCreateIssueButton:
 
         await btn.callback(interaction)
 
-        interaction.response.send_message.assert_awaited_once()
-        args = interaction.response.send_message.call_args
-        assert "failed" in args.args[0].lower()
-        assert args.kwargs["ephemeral"] is True
-        interaction.response.edit_message.assert_not_awaited()
+        interaction.response.edit_message.assert_awaited_once()
+        call_kwargs = interaction.response.edit_message.call_args.kwargs
+        assert "RuntimeError" in call_kwargs["embed"].description
+        assert "GitHub API down" in call_kwargs["embed"].description
+        assert isinstance(call_kwargs["view"], GitHubErrorView)
+        interaction.response.send_message.assert_not_awaited()
 
 
 class TestCancelIssueButton:
@@ -363,3 +367,121 @@ class TestRetryIssueButtonErrors:
         call_kwargs = interaction.edit_original_response.call_args.kwargs
         assert call_kwargs["embed"].description == "# New Title\nNew body"
         assert call_kwargs["view"] is not None
+
+
+class TestRetryGitHubButton:
+    @pytest.mark.asyncio
+    async def test_custom_id_round_trips(self):
+        btn = RetryGitHubButton(owner="myorg", repo="myrepo", retry_key="abc123")
+        match = RetryGitHubButton.__discord_ui_compiled_template__.match(btn.custom_id)
+        assert match is not None
+        interaction = AsyncMock()
+        item = MagicMock()
+        parsed = await RetryGitHubButton.from_custom_id(interaction, item, match)
+        assert parsed.owner == "myorg"
+        assert parsed.repo == "myrepo"
+        assert parsed.retry_key == "abc123"
+
+    def test_button_style_is_blurple(self):
+        btn = RetryGitHubButton(owner="o", repo="r", retry_key="k")
+        assert btn.item.style == discord.ButtonStyle.blurple
+
+    @pytest.mark.asyncio
+    async def test_callback_expired_cache_sends_ephemeral(self):
+        btn = RetryGitHubButton(owner="o", repo="r", retry_key="missing")
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        await btn.callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        assert "expired" in interaction.response.send_message.call_args.args[0].lower()
+        assert interaction.response.send_message.call_args.kwargs["ephemeral"] is True
+
+    @pytest.mark.asyncio
+    @patch("src.output.github.create_issue", new_callable=AsyncMock)
+    async def test_callback_success_creates_issue(self, mock_create):
+        mock_create.return_value = "https://github.com/o/r/issues/99"
+
+        data = CachedGitHubCreate(title="My Title", body="My body")
+        key = cache_pipeline_data(data)
+
+        btn = RetryGitHubButton(owner="o", repo="r", retry_key=key)
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.github_auth = AsyncMock()
+        interaction.client.github_auth.get_token = AsyncMock(return_value="ghs_tok")
+        interaction.client.http_client = MagicMock()
+
+        await btn.callback(interaction)
+
+        mock_create.assert_awaited_once()
+        call_args = mock_create.call_args.args
+        assert call_args[1] == "o"
+        assert call_args[2] == "r"
+        assert call_args[3] == "My Title"
+        assert call_args[4] == "My body"
+
+        interaction.response.edit_message.assert_awaited_once()
+        edit_kwargs = interaction.response.edit_message.call_args.kwargs
+        assert "issues/99" in edit_kwargs["content"]
+        assert edit_kwargs["view"] is None
+
+        interaction.channel.send.assert_awaited_once()
+        channel_kwargs = interaction.channel.send.call_args.kwargs
+        assert isinstance(channel_kwargs["view"], DeleteView)
+
+    @pytest.mark.asyncio
+    @patch("src.output.github.create_issue", new_callable=AsyncMock)
+    async def test_callback_failure_shows_error_with_retry(self, mock_create):
+        mock_create.side_effect = RuntimeError("server error")
+
+        data = CachedGitHubCreate(title="Title", body="Body")
+        key = cache_pipeline_data(data)
+
+        btn = RetryGitHubButton(owner="o", repo="r", retry_key=key)
+
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.github_auth = AsyncMock()
+        interaction.client.github_auth.get_token = AsyncMock(return_value="ghs_tok")
+        interaction.client.http_client = MagicMock()
+
+        await btn.callback(interaction)
+
+        interaction.response.edit_message.assert_awaited_once()
+        call_kwargs = interaction.response.edit_message.call_args.kwargs
+        assert "RuntimeError" in call_kwargs["embed"].description
+        assert "server error" in call_kwargs["embed"].description
+        assert isinstance(call_kwargs["view"], GitHubErrorView)
+
+        # New retry key is different from original
+        retry_btn = [
+            c for c in call_kwargs["view"].children if isinstance(c, RetryGitHubButton)
+        ][0]
+        assert retry_btn.retry_key != key
+
+
+class TestGitHubErrorView:
+    def test_has_two_children(self):
+        view = GitHubErrorView(owner="o", repo="r", retry_key="abc")
+        assert len(view.children) == 2
+
+    def test_contains_retry_github_button(self):
+        view = GitHubErrorView(owner="o", repo="r", retry_key="abc")
+        assert any(isinstance(c, RetryGitHubButton) for c in view.children)
+
+    def test_contains_cancel_button(self):
+        view = GitHubErrorView(owner="o", repo="r", retry_key="abc")
+        assert any(isinstance(c, CancelIssueButton) for c in view.children)
+
+    def test_has_no_timeout(self):
+        view = GitHubErrorView(owner="o", repo="r", retry_key="abc")
+        assert view.timeout is None
+
+    def test_is_persistent(self):
+        view = GitHubErrorView(owner="o", repo="r", retry_key="abc")
+        assert view.is_persistent()

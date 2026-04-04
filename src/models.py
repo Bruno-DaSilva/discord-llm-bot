@@ -17,3 +17,9 @@ class IssueMetadata:
 class CachedIssueData:
     pipeline_data: PipelineData
     metadata: IssueMetadata
+
+
+@dataclass
+class CachedGitHubCreate:
+    title: str
+    body: str
