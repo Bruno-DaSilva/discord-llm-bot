@@ -67,10 +67,14 @@ class EngineIssueCog(commands.Cog):
             return
 
         try:
-            fetch_result = await fetch_messages_with_metadata(interaction.channel, limit=n)
+            fetch_result = await fetch_messages_with_metadata(
+                interaction.channel, limit=n
+            )
 
             if not fetch_result.messages:
-                logger.error("No messages retrieved from channel %s", interaction.channel)
+                logger.error(
+                    "No messages retrieved from channel %s", interaction.channel
+                )
                 await interaction.followup.send(
                     content="Internal error: no messages could be retrieved.",
                     ephemeral=True,
@@ -86,7 +90,9 @@ class EngineIssueCog(commands.Cog):
                 latest_message_link=fetch_result.latest_message_link,
                 ephemeral=True,
             )
-            logger.info("engine-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
+            logger.info(
+                "engine-issue complete (%.0fms)", (time.monotonic() - t0) * 1000
+            )
         except Exception as exc:
             logger.exception("engine-issue failed")
             embed = build_error_embed(exc)
@@ -113,7 +119,9 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
         self.target_message = message
         self.cog = cog
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+    async def on_error(
+        self, interaction: discord.Interaction, error: Exception
+    ) -> None:
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
         embed = build_error_embed(error)
@@ -129,7 +137,9 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
             self.target_message.role_mentions,
             self.target_message.channel_mentions,
         )
-        target_formatted = f"{self.target_message.author.display_name}: {resolved_content}"
+        target_formatted = (
+            f"{self.target_message.author.display_name}: {resolved_content}"
+        )
 
         fetch_result = await fetch_messages_with_metadata(
             self.target_message.channel, limit=n - 1, before=self.target_message

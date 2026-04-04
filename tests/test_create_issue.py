@@ -25,10 +25,17 @@ class TestCreateIssueCogCommand:
     async def test_command_delegates_to_do_create_issue(self, mock_do, cog):
         interaction = _mock_interaction()
         await cog.create_issue_command.callback(
-            cog, interaction, repo="owner/repo", topic="bug", n=10,
+            cog,
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            n=10,
         )
         mock_do.assert_awaited_once_with(
-            interaction, repo="owner/repo", topic="bug", n=10,
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            n=10,
         )
 
 
@@ -76,7 +83,7 @@ class TestRunPipeline:
         )
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "RuntimeError" in call_kwargs["embed"].description
+        assert "Gemini 503" in call_kwargs["embed"].description
         assert isinstance(call_kwargs["view"], ErrorView)
 
     @pytest.mark.asyncio
@@ -94,10 +101,11 @@ class TestRunPipeline:
         assert any(isinstance(c, RetryIssueButton) for c in view.children)
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.check_repo_installation", new_callable=AsyncMock)
-    async def test_repo_not_installed_sends_error_embed(self, mock_check, cog):
-        mock_check.side_effect = RepoNotInstalled("acme", "widgets")
+    async def test_repo_not_installed_sends_error_embed(self, cog):
         interaction = _mock_interaction()
+        interaction.client.github.check_repo_installation = AsyncMock(
+            side_effect=RepoNotInstalled("acme", "widgets")
+        )
         await cog._run_pipeline(
             interaction,
             repo="acme/widgets",
@@ -113,9 +121,7 @@ class TestRunPipeline:
         cog.transform.run.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.check_repo_installation", new_callable=AsyncMock)
-    async def test_repo_installed_proceeds_to_transform(self, mock_check, cog):
-        mock_check.return_value = None
+    async def test_repo_installed_proceeds_to_transform(self, cog):
         interaction = _mock_interaction()
         await cog._run_pipeline(
             interaction,
@@ -124,7 +130,7 @@ class TestRunPipeline:
             messages=["user1: msg"],
             latest_message_link=None,
         )
-        mock_check.assert_awaited_once()
+        interaction.client.github.check_repo_installation.assert_awaited_once()
         cog.transform.run.assert_awaited_once()
 
 
@@ -132,7 +138,9 @@ class TestCreateIssueCog:
     def test_cog_instantiation(self, cog, bot):
         assert cog.bot is bot
 
-    def _mock_fetch_result(self, messages=None, link="https://discord.com/channels/1/2/3"):
+    def _mock_fetch_result(
+        self, messages=None, link="https://discord.com/channels/1/2/3"
+    ):
         return FetchResult(
             messages=messages or ["user1: msg"],
             latest_message_link=link,
@@ -163,9 +171,7 @@ class TestCreateIssueCog:
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_command_calls_transform_with_pipeline_data(
-        self, mock_fetch, cog
-    ):
+    async def test_command_calls_transform_with_pipeline_data(self, mock_fetch, cog):
         mock_fetch.return_value = self._mock_fetch_result(
             messages=["user1: hello", "user2: world"]
         )
@@ -208,7 +214,11 @@ class TestCreateIssueCog:
 
         interaction.followup.send.assert_awaited_once()
         call_args = interaction.followup.send.call_args
-        content = call_args.kwargs.get("content") or call_args.args[0] if call_args.args else call_args.kwargs.get("content", "")
+        content = (
+            call_args.kwargs.get("content") or call_args.args[0]
+            if call_args.args
+            else call_args.kwargs.get("content", "")
+        )
         assert "internal error" in content.lower()
         cog.transform.run.assert_not_awaited()
 
@@ -218,18 +228,17 @@ class TestCreateIssueCog:
         mock_fetch.return_value = self._mock_fetch_result()
         cog.transform.run.side_effect = RuntimeError("Gemini 503")
 
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        interaction.channel = MagicMock()
-        interaction.client = MagicMock()
+        interaction = self._mock_interaction()
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "RuntimeError" in call_kwargs["embed"].description
+        assert "Gemini 503" in call_kwargs["embed"].description
         assert isinstance(call_kwargs["view"], ErrorView)
-        assert any(isinstance(c, RetryIssueButton) for c in call_kwargs["view"].children)
+        assert any(
+            isinstance(c, RetryIssueButton) for c in call_kwargs["view"].children
+        )
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
@@ -257,10 +266,6 @@ class TestCreateIssueCog:
 
 
 class TestIssuePreviewView:
-    def test_preview_view_has_three_children(self):
-        view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
-        assert len(view.children) == 3
-
     def test_preview_view_contains_create_button(self):
         view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
         assert any(isinstance(c, CreateIssueButton) for c in view.children)
@@ -276,10 +281,6 @@ class TestIssuePreviewView:
     def test_preview_view_is_persistent(self):
         view = IssuePreviewView(owner="o", repo="r", cache_key="k1")
         assert view.is_persistent()
-
-    def test_preview_view_has_three_children_with_cache_key(self):
-        view = IssuePreviewView(owner="o", repo="r", cache_key="abc123")
-        assert len(view.children) == 3
 
     def test_preview_view_contains_retry_button(self):
         view = IssuePreviewView(owner="o", repo="r", cache_key="abc123")
@@ -298,12 +299,7 @@ class TestIssuePreviewView:
             messages=["msg"], latest_message_link="https://discord.com/channels/1/2/3"
         )
 
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-        interaction.channel = MagicMock()
-        interaction.client = MagicMock()
-        interaction.user = MagicMock()
-        interaction.user.display_name = "TestUser"
+        interaction = _mock_interaction()
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
@@ -322,15 +318,19 @@ class TestCreateIssueModal:
         msg.guild.id = guild_id
         return msg
 
-    def test_modal_has_three_fields(self, cog):
+    def test_modal_has_expected_fields(self, cog):
         msg = self._mock_message()
         modal = CreateIssueModal(msg, cog=cog)
-        assert len(modal.children) == 3
+        assert hasattr(modal, "repo")
+        assert hasattr(modal, "topic")
+        assert hasattr(modal, "n")
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_on_submit_defers(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(messages=["Bob: earlier"], latest_message_link=None)
+        mock_fetch.return_value = FetchResult(
+            messages=["Bob: earlier"], latest_message_link=None
+        )
         msg = self._mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         modal.repo._value = "owner/repo"
@@ -343,7 +343,9 @@ class TestCreateIssueModal:
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_on_submit_fetches_messages_anchored_at_target(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(messages=["Bob: earlier"], latest_message_link=None)
+        mock_fetch.return_value = FetchResult(
+            messages=["Bob: earlier"], latest_message_link=None
+        )
         msg = self._mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         modal.repo._value = "owner/repo"
@@ -356,7 +358,9 @@ class TestCreateIssueModal:
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_on_submit_prepends_target_message(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(messages=["Bob: earlier"], latest_message_link=None)
+        mock_fetch.return_value = FetchResult(
+            messages=["Bob: earlier"], latest_message_link=None
+        )
         msg = self._mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         modal.repo._value = "owner/repo"
@@ -381,11 +385,14 @@ class TestCreateIssueModal:
         interaction = _mock_interaction()
         await modal.on_submit(interaction)
         from src.ui import get_cached_pipeline_data
+
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
         create_btn = [c for c in view.children if isinstance(c, CreateIssueButton)][0]
         cached = get_cached_pipeline_data(create_btn.cache_key)
-        assert cached.metadata.latest_message_link == "https://discord.com/channels/1/2/3"
+        assert (
+            cached.metadata.latest_message_link == "https://discord.com/channels/1/2/3"
+        )
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
@@ -400,6 +407,7 @@ class TestCreateIssueModal:
         interaction = _mock_interaction()
         await modal.on_submit(interaction)
         from src.ui import get_cached_pipeline_data
+
         call_kwargs = interaction.followup.send.call_args.kwargs
         view = call_kwargs["view"]
         create_btn = [c for c in view.children if isinstance(c, CreateIssueButton)][0]

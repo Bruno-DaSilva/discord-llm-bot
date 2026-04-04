@@ -10,7 +10,7 @@ from src.models import CachedGitHubCreate, CachedIssueData
 
 logger = logging.getLogger(__name__)
 
-_CACHE_TTL = 3600  # 1 hour
+_CACHE_TTL = 86400  # 24 hours
 _retry_cache: dict[str, tuple[float, CachedIssueData]] = {}
 
 
@@ -110,30 +110,22 @@ class CreateIssueButton(
         title = lines[0].lstrip("# ").strip()
         body = lines[1].strip() if len(lines) > 1 else ""
 
-        from src.output.github import append_footer, create_issue
+        from src.output.github import append_footer
 
         body = append_footer(
             body, cached.metadata.author_username, cached.metadata.latest_message_link
         )
 
         try:
-            token = await interaction.client.github_auth.get_token()
-            url = await create_issue(
-                interaction.client.http_client,
-                self.owner,
-                self.repo,
-                title,
-                body,
-                token,
+            url = await interaction.client.github.create_issue(
+                self.owner, self.repo, title, body
             )
         except Exception as exc:
             logger.exception("Failed to create issue on GitHub")
             github_data = CachedGitHubCreate(title=title, body=body)
             new_key = cache_pipeline_data(github_data)
             embed = build_error_embed(exc)
-            view = GitHubErrorView(
-                owner=self.owner, repo=self.repo, retry_key=new_key
-            )
+            view = GitHubErrorView(owner=self.owner, repo=self.repo, retry_key=new_key)
             await interaction.response.edit_message(embed=embed, view=view)
             return
 
@@ -185,9 +177,7 @@ class RetryIssueButton(
 
         from src.cogs.create_issue import IssuePreviewView
 
-        loading_view = IssuePreviewView(
-            owner=self.owner, repo=self.repo, loading=True
-        )
+        loading_view = IssuePreviewView(owner=self.owner, repo=self.repo, loading=True)
         await interaction.response.edit_message(view=loading_view)
 
         cog = interaction.client.get_cog("CreateIssueCog")
@@ -202,9 +192,7 @@ class RetryIssueButton(
             await interaction.edit_original_response(embed=embed, view=view)
             return
 
-        view = IssuePreviewView(
-            owner=self.owner, repo=self.repo, cache_key=new_key
-        )
+        view = IssuePreviewView(owner=self.owner, repo=self.repo, cache_key=new_key)
 
         embed = discord.Embed(description=result.input)
         await interaction.edit_original_response(embed=embed, view=view)
@@ -279,26 +267,16 @@ class RetryGitHubButton(
             )
             return
 
-        from src.output.github import create_issue
-
         try:
-            token = await interaction.client.github_auth.get_token()
-            url = await create_issue(
-                interaction.client.http_client,
-                self.owner,
-                self.repo,
-                cached.title,
-                cached.body,
-                token,
+            url = await interaction.client.github.create_issue(
+                self.owner, self.repo, cached.title, cached.body
             )
         except Exception as exc:
             logger.exception("GitHub retry failed")
             new_data = CachedGitHubCreate(title=cached.title, body=cached.body)
             new_key = cache_pipeline_data(new_data)
             embed = build_error_embed(exc)
-            view = GitHubErrorView(
-                owner=self.owner, repo=self.repo, retry_key=new_key
-            )
+            view = GitHubErrorView(owner=self.owner, repo=self.repo, retry_key=new_key)
             await interaction.response.edit_message(embed=embed, view=view)
             return
 

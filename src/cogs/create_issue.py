@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from src.models import CachedIssueData, IssueMetadata, PipelineData
 from src.output.discord import fetch_messages_with_metadata, resolve_mentions
-from src.output.github import RepoNotInstalled, check_repo_installation
+from src.output.github import RepoNotInstalled
 from src.transform.protocol import Transform
 from src.ui import (
     CancelIssueButton,
@@ -44,10 +44,7 @@ async def run_pipeline(
     owner, repo_name = repo.split("/", 1)
 
     try:
-        app_jwt = interaction.client.github_auth.get_app_jwt()
-        await check_repo_installation(
-            interaction.client.http_client, owner, repo_name, app_jwt
-        )
+        await interaction.client.github.check_repo_installation(owner, repo_name)
     except RepoNotInstalled:
         embed = discord.Embed(
             title="Repository not available",
@@ -60,7 +57,9 @@ async def run_pipeline(
         await interaction.followup.send(embed=embed, ephemeral=ephemeral)
         return
 
-    retry_key = cache_pipeline_data(CachedIssueData(pipeline_data=data, metadata=metadata))
+    retry_key = cache_pipeline_data(
+        CachedIssueData(pipeline_data=data, metadata=metadata)
+    )
 
     try:
         result = await transform.run(data)
@@ -135,7 +134,9 @@ class CreateIssueCog(commands.Cog):
 
         try:
             logger.debug("Fetching %d messages", n)
-            fetch_result = await fetch_messages_with_metadata(interaction.channel, limit=n)
+            fetch_result = await fetch_messages_with_metadata(
+                interaction.channel, limit=n
+            )
             logger.debug(
                 "Fetched %d messages (%.0fms)",
                 len(fetch_result.messages),
@@ -145,7 +146,9 @@ class CreateIssueCog(commands.Cog):
             logger.debug("Messages: \n%r\n===", fetch_result.messages)
 
             if not fetch_result.messages:
-                logger.error("No messages retrieved from channel %s", interaction.channel)
+                logger.error(
+                    "No messages retrieved from channel %s", interaction.channel
+                )
                 await interaction.followup.send(
                     content="Internal error: no messages could be retrieved.",
                     ephemeral=True,
@@ -159,7 +162,9 @@ class CreateIssueCog(commands.Cog):
                 messages=fetch_result.messages,
                 latest_message_link=fetch_result.latest_message_link,
             )
-            logger.info("create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000)
+            logger.info(
+                "create-issue complete (%.0fms)", (time.monotonic() - t0) * 1000
+            )
         except Exception as exc:
             logger.exception("create-issue failed")
             embed = build_error_embed(exc)
@@ -211,7 +216,9 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
         self.target_message = message
         self.cog = cog
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+    async def on_error(
+        self, interaction: discord.Interaction, error: Exception
+    ) -> None:
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
         embed = build_error_embed(error)
@@ -227,7 +234,9 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
             self.target_message.role_mentions,
             self.target_message.channel_mentions,
         )
-        target_formatted = f"{self.target_message.author.display_name}: {resolved_content}"
+        target_formatted = (
+            f"{self.target_message.author.display_name}: {resolved_content}"
+        )
 
         fetch_result = await fetch_messages_with_metadata(
             self.target_message.channel, limit=n - 1, before=self.target_message
@@ -268,7 +277,11 @@ class IssuePreviewView(discord.ui.View):
                 )
             )
         else:
-            self.add_item(CreateIssueButton(owner=owner, repo=repo, cache_key=cache_key or ""))
+            self.add_item(
+                CreateIssueButton(owner=owner, repo=repo, cache_key=cache_key or "")
+            )
             self.add_item(CancelIssueButton(owner=owner, repo=repo))
             if cache_key is not None:
-                self.add_item(RetryIssueButton(owner=owner, repo=repo, retry_key=cache_key))
+                self.add_item(
+                    RetryIssueButton(owner=owner, repo=repo, retry_key=cache_key)
+                )

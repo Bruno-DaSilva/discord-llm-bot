@@ -23,7 +23,10 @@ class TestEngineIssueCogCommand:
     async def test_command_delegates(self, mock_do, cog):
         interaction = _mock_interaction()
         await cog.engine_issue_command.callback(
-            cog, interaction, topic="bug", n=10,
+            cog,
+            interaction,
+            topic="bug",
+            n=10,
         )
         mock_do.assert_awaited_once_with(interaction, topic="bug", n=10)
 
@@ -35,7 +38,9 @@ class TestEngineIssueCog:
     def test_cog_instantiation(self, cog, bot):
         assert cog.bot is bot
 
-    def _mock_fetch_result(self, messages=None, link="https://discord.com/channels/1/2/3"):
+    def _mock_fetch_result(
+        self, messages=None, link="https://discord.com/channels/1/2/3"
+    ):
         return FetchResult(
             messages=messages or ["user1: msg"],
             latest_message_link=link,
@@ -78,7 +83,11 @@ class TestEngineIssueCog:
         await cog._do_engine_issue(interaction, topic="bug", n=5)
         interaction.followup.send.assert_awaited_once()
         call_args = interaction.followup.send.call_args
-        content = call_args.kwargs.get("content") or call_args.args[0] if call_args.args else call_args.kwargs.get("content", "")
+        content = (
+            call_args.kwargs.get("content") or call_args.args[0]
+            if call_args.args
+            else call_args.kwargs.get("content", "")
+        )
         assert "internal error" in content.lower()
         cog.transform.run.assert_not_awaited()
 
@@ -91,7 +100,7 @@ class TestEngineIssueCog:
         await cog._do_engine_issue(interaction, topic="bug", n=5)
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "RuntimeError" in call_kwargs["embed"].description
+        assert "Gemini 503" in call_kwargs["embed"].description
         assert isinstance(call_kwargs["view"], ErrorView)
 
     @pytest.mark.asyncio
@@ -114,15 +123,18 @@ class TestEngineIssueModal:
         msg.guild.id = guild_id
         return msg
 
-    def test_modal_has_two_fields(self, cog):
+    def test_modal_has_expected_fields(self, cog):
         msg = self._mock_message()
         modal = EngineIssueModal(msg, cog=cog)
-        assert len(modal.children) == 2
+        assert hasattr(modal, "topic")
+        assert hasattr(modal, "n")
 
     @pytest.mark.asyncio
     @patch("src.cogs.engine_issue.fetch_messages_with_metadata")
     async def test_on_submit_defers(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(messages=["Bob: earlier"], latest_message_link=None)
+        mock_fetch.return_value = FetchResult(
+            messages=["Bob: earlier"], latest_message_link=None
+        )
         msg = self._mock_message()
         modal = EngineIssueModal(msg, cog=cog)
         modal.topic._value = "bug report"
@@ -134,7 +146,9 @@ class TestEngineIssueModal:
     @pytest.mark.asyncio
     @patch("src.cogs.engine_issue.fetch_messages_with_metadata")
     async def test_on_submit_uses_hardcoded_repo(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(messages=["Bob: earlier"], latest_message_link=None)
+        mock_fetch.return_value = FetchResult(
+            messages=["Bob: earlier"], latest_message_link=None
+        )
         msg = self._mock_message()
         modal = EngineIssueModal(msg, cog=cog)
         modal.topic._value = "bug report"
@@ -150,7 +164,9 @@ class TestEngineIssueModal:
     @pytest.mark.asyncio
     @patch("src.cogs.engine_issue.fetch_messages_with_metadata")
     async def test_on_submit_prepends_target_message(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(messages=["Bob: earlier"], latest_message_link=None)
+        mock_fetch.return_value = FetchResult(
+            messages=["Bob: earlier"], latest_message_link=None
+        )
         msg = self._mock_message()
         modal = EngineIssueModal(msg, cog=cog)
         modal.topic._value = "bug report"

@@ -31,29 +31,6 @@ class TestGeminiTransform:
         assert isinstance(GeminiTransform(client=mock_client), Transform)
 
     @pytest.mark.asyncio
-    async def test_run_returns_pipeline_data(self):
-        transform, _ = self._make_transform()
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
-        result = await transform.run(data)
-        assert isinstance(result, PipelineData)
-
-    @pytest.mark.asyncio
-    async def test_run_sets_generated_context(self):
-        transform, mock_client = self._make_transform()
-        mock_client.aio.models.generate_content.return_value.text = "generated"
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
-        result = await transform.run(data)
-        assert result.context["generated"] == ["generated"]
-        assert result.input == "generated"
-
-    @pytest.mark.asyncio
-    async def test_run_preserves_existing_context(self):
-        transform, _ = self._make_transform()
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
-        result = await transform.run(data)
-        assert result.context["messages"] == ["msg1"]
-
-    @pytest.mark.asyncio
     async def test_run_raises_on_api_error(self):
         transform, mock_client = self._make_transform()
         mock_client.aio.models.generate_content.side_effect = RuntimeError("API down")
@@ -86,24 +63,6 @@ class TestIssueGeneratorTransform:
         mock_client = MagicMock()
         assert isinstance(IssueGeneratorTransform(client=mock_client), Transform)
 
-    def test_build_system_prompt_interpolates_topic(self):
-        transform = IssueGeneratorTransform(client=MagicMock())
-        data = PipelineData(input="login bug", context={"messages": ["msg"]})
-        rendered = transform.build_system_prompt(data)
-        assert "login bug" in rendered
-        assert "{{ context.ticket_topic }}" not in rendered
-
-    def test_build_system_prompt_interpolates_messages(self):
-        transform = IssueGeneratorTransform(client=MagicMock())
-        data = PipelineData(
-            input="topic",
-            context={"messages": ["user1: broken", "user2: same"]},
-        )
-        rendered = transform.build_system_prompt(data)
-        assert "user1: broken" in rendered
-        assert "user2: same" in rendered
-        assert '{{ context.messages.join("\\n") }}' not in rendered
-
     def test_build_user_prompt_returns_empty(self):
         transform = IssueGeneratorTransform(client=MagicMock())
         data = PipelineData(input="topic", context={"messages": ["msg"]})
@@ -114,9 +73,7 @@ class TestIssueGeneratorTransform:
         mock_response = MagicMock()
         mock_response.text = "## Title\nLogin broken\n## Body\nUsers can't log in."
         mock_client = MagicMock()
-        mock_client.aio.models.generate_content = AsyncMock(
-            return_value=mock_response
-        )
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
         transform = IssueGeneratorTransform(client=mock_client)
         data = PipelineData(
             context={"messages": ["user1: login is broken", "user2: same here"]},

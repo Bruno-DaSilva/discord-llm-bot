@@ -2,7 +2,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.output.discord import fetch_messages_with_metadata, format_message, resolve_mentions
+from src.output.discord import (
+    fetch_messages_with_metadata,
+    format_message,
+    resolve_mentions,
+)
 
 
 class TestResolveMentions:
@@ -48,9 +52,7 @@ class TestResolveMentions:
         user = self._make_user(1, "Bob")
         role = self._make_role(2, "Admin")
         channel = self._make_channel(3, "dev")
-        result = resolve_mentions(
-            "<@1> asked <@&2> in <#3>", [user], [role], [channel]
-        )
+        result = resolve_mentions("<@1> asked <@&2> in <#3>", [user], [role], [channel])
         assert result == "@Bob asked @Admin in #dev"
 
     def test_no_mentions_returns_unchanged(self):
@@ -97,7 +99,10 @@ class TestFormatMessage:
         assert result == "Bot: check this out\n[Embed] Issue Title | Some details"
 
     def test_message_with_embed_fields(self):
-        fields = [self._make_field("Status", "Open"), self._make_field("Priority", "High")]
+        fields = [
+            self._make_field("Status", "Open"),
+            self._make_field("Priority", "High"),
+        ]
         embed = self._make_embed(title="Ticket", fields=fields)
         msg = self._make_msg("Bot", "", embeds=[embed])
         result = format_message(msg)

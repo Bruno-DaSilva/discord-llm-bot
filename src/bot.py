@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from src.cogs.create_issue import CreateIssueCog
 from src.cogs.engine_issue import EngineIssueCog
+from src.output.github import GitHubService
 from src.output.github_auth import GitHubAppAuth
 from src.transform.gemini import IssueGeneratorTransform
 from src.ui import (
@@ -59,6 +60,7 @@ class IssueBot(commands.Bot):
             installation_id=self._github_installation_id,
             client=self.http_client,
         )
+        self.github = GitHubService(auth=self.github_auth, client=self.http_client)
 
         from google import genai
 
@@ -83,7 +85,8 @@ class IssueBot(commands.Bot):
         await self.tree.sync()
         logger.info("Command tree synced")
 
-# This setup fn makes it easier to test the bot without 
+
+# This setup fn makes it easier to test the bot without
 #   needing to set up a full .env file
 def create_bot(
     gemini_api_key: str,

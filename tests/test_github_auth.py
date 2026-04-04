@@ -40,7 +40,9 @@ class TestGitHubAppAuth:
             client=client,
         )
 
-    def _mock_client_with_token(self, token="ghs_abc123", expires_at="2099-01-01T00:00:00Z"):
+    def _mock_client_with_token(
+        self, token="ghs_abc123", expires_at="2099-01-01T00:00:00Z"
+    ):
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "token": token,
@@ -59,7 +61,10 @@ class TestGitHubAppAuth:
         await auth.get_token()
 
         call_args = client.post.call_args
-        assert call_args.args[0] == "https://api.github.com/app/installations/67890/access_tokens"
+        assert (
+            call_args.args[0]
+            == "https://api.github.com/app/installations/67890/access_tokens"
+        )
 
     @pytest.mark.asyncio
     async def test_sends_jwt_bearer_header(self):
@@ -106,9 +111,7 @@ class TestGitHubAppAuth:
     def test_get_app_jwt_returns_valid_jwt(self):
         auth = self._make_auth()
         token = auth.get_app_jwt()
-        payload = jwt.decode(
-            token, _private_key.public_key(), algorithms=["RS256"]
-        )
+        payload = jwt.decode(token, _private_key.public_key(), algorithms=["RS256"])
         assert payload["iss"] == "12345"
         assert "exp" in payload
 

@@ -1,5 +1,5 @@
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -26,8 +26,14 @@ test_private_key = _private_key
 # Isolate tests from host proxy configuration
 #   needed mostly for when running in a sandbox... like in claude code
 # ---------------------------------------------------------------------------
-_PROXY_VARS = ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY",
-               "all_proxy", "https_proxy", "http_proxy")
+_PROXY_VARS = (
+    "ALL_PROXY",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "all_proxy",
+    "https_proxy",
+    "http_proxy",
+)
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -53,6 +59,22 @@ class FakeTransform:
             input=self.output_text,
             context={**data.context, "generated": [self.output_text]},
         )
+
+
+class FakeGitHubClient:
+    """Satisfies GitHubClient protocol. Returns canned URLs, records calls."""
+
+    def __init__(self, issue_url="https://github.com/o/r/issues/1"):
+        self.issue_url = issue_url
+        self.create_issue_calls: list[tuple] = []
+        self.check_calls: list[tuple] = []
+
+    async def create_issue(self, owner: str, repo: str, title: str, body: str) -> str:
+        self.create_issue_calls.append((owner, repo, title, body))
+        return self.issue_url
+
+    async def check_repo_installation(self, owner: str, repo: str) -> None:
+        self.check_calls.append((owner, repo))
 
 
 class FailingTransform:
@@ -91,6 +113,11 @@ def mock_interaction():
     interaction.response.is_done = MagicMock(return_value=True)
     interaction.channel = MagicMock()
     interaction.client = MagicMock()
+    interaction.client.github = AsyncMock()
+    interaction.client.github.check_repo_installation = AsyncMock()
+    interaction.client.github.create_issue = AsyncMock(
+        return_value="https://github.com/o/r/issues/1"
+    )
     interaction.user = MagicMock()
     interaction.user.display_name = "TestUser"
     return interaction
@@ -100,19 +127,6 @@ def make_cached(input="topic", messages=None, author="tester", link=None):
     pipeline = PipelineData(input=input, context={"messages": messages or ["msg"]})
     metadata = IssueMetadata(author_username=author, latest_message_link=link)
     return CachedIssueData(pipeline_data=pipeline, metadata=metadata)
-
-
-# ---------------------------------------------------------------------------
-# Patch check_repo_installation by default — tests that need to control it
-# can override via @patch on the individual test/class.
-# ---------------------------------------------------------------------------
-@pytest.fixture(autouse=True)
-def _patch_check_repo_installation():
-    with patch(
-        "src.cogs.create_issue.check_repo_installation",
-        new_callable=AsyncMock,
-    ):
-        yield
 
 
 # ---------------------------------------------------------------------------

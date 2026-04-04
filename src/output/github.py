@@ -2,6 +2,8 @@ import logging
 
 import httpx
 
+from src.output.github_auth import GitHubAppAuth
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +56,22 @@ async def create_issue(
     url = response.json()["html_url"]
     logger.info("Issue created: %s", url)
     return url
+
+
+class GitHubService:
+    """Wraps GitHub API operations behind a single interface."""
+
+    def __init__(self, auth: GitHubAppAuth, client: httpx.AsyncClient) -> None:
+        self._auth = auth
+        self._client = client
+
+    async def create_issue(self, owner: str, repo: str, title: str, body: str) -> str:
+        token = await self._auth.get_token()
+        return await create_issue(self._client, owner, repo, title, body, token)
+
+    async def check_repo_installation(self, owner: str, repo: str) -> None:
+        app_jwt = self._auth.get_app_jwt()
+        await check_repo_installation(self._client, owner, repo, app_jwt)
 
 
 def append_footer(body: str, author: str, message_link: str | None) -> str:
