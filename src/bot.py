@@ -8,6 +8,7 @@ import httpx
 from discord.ext import commands
 
 from src.cogs.create_issue import CreateIssueCog
+from src.cogs.engine_issue import EngineIssueCog
 from src.cogs.test_issue import DebugIssueCog
 from src.output.github_auth import GitHubAppAuth
 from src.transform.gemini import IssueGeneratorTransform
@@ -63,6 +64,13 @@ class IssueBot(commands.Bot):
         )
         await self.add_cog(cog)
         logger.info("CreateIssueCog loaded")
+
+        engine_cog = EngineIssueCog(
+            self,
+            transform=transform,
+        )
+        await self.add_cog(engine_cog)
+        logger.info("EngineIssueCog loaded")
 
         debug_cog = DebugIssueCog(
             self,
