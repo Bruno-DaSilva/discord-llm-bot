@@ -72,8 +72,11 @@ class TestRunPipeline:
         assert pipeline_data.context["messages"] == ["user1: hello", "user2: world"]
 
     @pytest.mark.asyncio
-    async def test_sends_preview_embed(self, cog):
+    async def test_sends_loading_message(self, cog):
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
         await cog._run_pipeline(
             interaction,
             repo="owner/repo",
@@ -82,14 +85,17 @@ class TestRunPipeline:
             latest_message_link=None,
         )
         interaction.followup.send.assert_awaited_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "# Title" in call_kwargs["embed"].description
-        assert isinstance(call_kwargs["view"], PreviewView)
+        send_kwargs = interaction.followup.send.call_args.kwargs
+        assert send_kwargs["wait"] is True
+        embed = send_kwargs["embed"]
+        assert "generat" in embed.description.lower()
 
     @pytest.mark.asyncio
-    async def test_sends_error_embed_on_transform_failure(self, cog):
-        cog.transform.run.side_effect = RuntimeError("Gemini 503")
+    async def test_edits_loading_with_preview(self, cog):
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
         await cog._run_pipeline(
             interaction,
             repo="owner/repo",
@@ -97,14 +103,36 @@ class TestRunPipeline:
             messages=["user1: msg"],
             latest_message_link=None,
         )
-        interaction.followup.send.assert_awaited_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "Gemini 503" in call_kwargs["embed"].description
-        assert isinstance(call_kwargs["view"], ErrorView)
+        loading_msg.edit.assert_awaited_once()
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        assert "# Title" in edit_kwargs["embed"].description
+        assert isinstance(edit_kwargs["view"], PreviewView)
+
+    @pytest.mark.asyncio
+    async def test_edits_loading_with_error_on_transform_failure(self, cog):
+        cog.transform.run.side_effect = RuntimeError("Gemini 503")
+        interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
+        await cog._run_pipeline(
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+        )
+        loading_msg.edit.assert_awaited_once()
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        assert "Gemini 503" in edit_kwargs["embed"].description
+        assert isinstance(edit_kwargs["view"], ErrorView)
 
     @pytest.mark.asyncio
     async def test_preview_includes_retry_button(self, cog):
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
         await cog._run_pipeline(
             interaction,
             repo="owner/repo",
@@ -112,16 +140,19 @@ class TestRunPipeline:
             messages=["user1: msg"],
             latest_message_link="https://discord.com/channels/1/2/3",
         )
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        view = call_kwargs["view"]
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        view = edit_kwargs["view"]
         assert any(isinstance(c, RetryButton) for c in view.children)
 
     @pytest.mark.asyncio
-    async def test_repo_not_installed_sends_error_embed(self, cog):
+    async def test_edits_loading_with_repo_not_installed_error(self, cog):
         cog.handler.github.check_repo_installation = AsyncMock(
             side_effect=RepoNotInstalled("acme", "widgets")
         )
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
         await cog._run_pipeline(
             interaction,
             repo="acme/widgets",
@@ -129,11 +160,11 @@ class TestRunPipeline:
             messages=["user1: msg"],
             latest_message_link=None,
         )
-        interaction.followup.send.assert_awaited_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        assert call_kwargs["embed"].color == discord.Color.red()
-        assert "not installed" in call_kwargs["embed"].description.lower()
-        assert "acme/widgets" in call_kwargs["embed"].description
+        loading_msg.edit.assert_awaited_once()
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        assert edit_kwargs["embed"].color == discord.Color.red()
+        assert "not installed" in edit_kwargs["embed"].description.lower()
+        assert "acme/widgets" in edit_kwargs["embed"].description
         cog.transform.run.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -272,15 +303,17 @@ class TestCreateIssueCog:
     async def test_command_sends_preview(self, mock_fetch, cog):
         mock_fetch.return_value = self._mock_fetch_result()
         interaction = self._mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
-        interaction.followup.send.assert_awaited_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        embed = call_kwargs.get("embed")
+        loading_msg.edit.assert_awaited_once()
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        embed = edit_kwargs.get("embed")
         assert embed is not None
         assert "# Title" in embed.description
-        assert call_kwargs.get("view") is not None
+        assert edit_kwargs.get("view") is not None
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
@@ -305,12 +338,13 @@ class TestCreateIssueCog:
     async def test_command_sends_preview_with_retry_button(self, mock_fetch, cog):
         mock_fetch.return_value = self._mock_fetch_result()
         interaction = self._mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
-        interaction.followup.send.assert_awaited_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        view = call_kwargs["view"]
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        view = edit_kwargs["view"]
         assert any(isinstance(c, RetryButton) for c in view.children)
 
     @pytest.mark.asyncio
@@ -320,15 +354,17 @@ class TestCreateIssueCog:
         cog.transform.run.side_effect = RuntimeError("Gemini 503")
 
         interaction = self._mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
-        interaction.followup.send.assert_awaited_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "Gemini 503" in call_kwargs["embed"].description
-        assert isinstance(call_kwargs["view"], ErrorView)
+        loading_msg.edit.assert_awaited_once()
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        assert "Gemini 503" in edit_kwargs["embed"].description
+        assert isinstance(edit_kwargs["view"], ErrorView)
         assert any(
-            isinstance(c, RetryButton) for c in call_kwargs["view"].children
+            isinstance(c, RetryButton) for c in edit_kwargs["view"].children
         )
 
     @pytest.mark.asyncio
@@ -391,11 +427,13 @@ class TestPreviewView:
         )
 
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
 
         await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
 
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        view = call_kwargs["view"]
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        view = edit_kwargs["view"]
         assert any(isinstance(c, RetryButton) for c in view.children)
 
 
@@ -474,11 +512,13 @@ class TestCreateIssueModal:
         modal.topic._value = "bug"
         modal.n._value = "20"
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
         await modal.on_submit(interaction)
         from src.ui import get_cached_pipeline_data
 
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        view = call_kwargs["view"]
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        view = edit_kwargs["view"]
         confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
         cached = get_cached_pipeline_data(confirm_btn.cache_key)
         assert (
@@ -497,11 +537,13 @@ class TestCreateIssueModal:
         modal.topic._value = "bug"
         modal.n._value = "20"
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
         await modal.on_submit(interaction)
         from src.ui import get_cached_pipeline_data
 
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        view = call_kwargs["view"]
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        view = edit_kwargs["view"]
         confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
         cached = get_cached_pipeline_data(confirm_btn.cache_key)
         assert cached.extra["latest_message_link"] is None

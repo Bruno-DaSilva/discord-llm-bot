@@ -72,10 +72,11 @@ class TestEngineIssueCog:
     async def test_command_passes_hardcoded_repo(self, mock_fetch, cog):
         mock_fetch.return_value = self._mock_fetch_result()
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
         await cog._do_engine_issue(interaction, topic="bug", n=5)
-        interaction.followup.send.assert_awaited_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        view = call_kwargs["view"]
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        view = edit_kwargs["view"]
         confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
         from src.ui import get_cached_pipeline_data
 
@@ -105,11 +106,13 @@ class TestEngineIssueCog:
         mock_fetch.return_value = self._mock_fetch_result()
         cog.transform.run.side_effect = RuntimeError("Gemini 503")
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
         await cog._do_engine_issue(interaction, topic="bug", n=5)
-        interaction.followup.send.assert_awaited_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "Gemini 503" in call_kwargs["embed"].description
-        assert isinstance(call_kwargs["view"], ErrorView)
+        loading_msg.edit.assert_awaited_once()
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        assert "Gemini 503" in edit_kwargs["embed"].description
+        assert isinstance(edit_kwargs["view"], ErrorView)
 
     @pytest.mark.asyncio
     async def test_expired_interaction_is_ignored(self, cog):
@@ -162,9 +165,11 @@ class TestEngineIssueModal:
         modal.topic._value = "bug report"
         modal.n._value = "20"
         interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
         await modal.on_submit(interaction)
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        view = call_kwargs["view"]
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        view = edit_kwargs["view"]
         confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
         from src.ui import get_cached_pipeline_data
 

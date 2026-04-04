@@ -152,6 +152,14 @@ async def run_pipeline(
 
     owner, repo_name = repo.split("/", 1)
 
+    loading_embed = discord.Embed(
+        description="Generating issue\N{HORIZONTAL ELLIPSIS}",
+        color=discord.Color.blurple(),
+    )
+    loading_msg = await interaction.followup.send(
+        embed=loading_embed, ephemeral=ephemeral, wait=True
+    )
+
     try:
         await github.check_repo_installation(owner, repo_name)
     except RepoNotInstalled:
@@ -163,7 +171,7 @@ async def run_pipeline(
             ),
             color=discord.Color.red(),
         )
-        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+        await loading_msg.edit(embed=embed)
         return
 
     cached = CachedCommandData(
@@ -184,7 +192,7 @@ async def run_pipeline(
         logger.exception("Transform failed")
         embed = build_error_embed(exc)
         view = ErrorView(cmd_type=CMD_TYPE, retry_key=retry_key)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
+        await loading_msg.edit(embed=embed, view=view)
         return
 
     view = PreviewView(
@@ -192,7 +200,7 @@ async def run_pipeline(
     )
 
     embed = discord.Embed(description=result.input)
-    await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
+    await loading_msg.edit(embed=embed, view=view)
 
 
 class CreateIssueCog(commands.Cog):
