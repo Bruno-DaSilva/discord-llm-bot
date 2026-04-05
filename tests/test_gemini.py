@@ -4,7 +4,7 @@ import pytest
 
 from src.models import PipelineData
 from src.transform.gemini import GeminiTransform, IssueGeneratorTransform
-from src.transform.protocol import Transform
+from src.transform.transform import Transform
 
 
 class TestGeminiTransform:

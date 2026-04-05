@@ -3,7 +3,7 @@ import logging
 import pytest
 from pythonjsonlogger.json import JsonFormatter
 
-from src.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 
 
 @pytest.fixture(autouse=True)

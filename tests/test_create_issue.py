@@ -5,9 +5,9 @@ import discord
 import pytest
 
 from src.cogs.create_issue import CreateIssueCog, CreateIssueHandler, CreateIssueModal
-from src.output.discord import FetchResult
+from src.utils.discord import FetchResult
 from src.output.github import RepoNotInstalled
-from src.ui import (
+from src.cogs.ui import (
     CancelButton,
     ConfirmButton,
     ErrorView,
@@ -515,7 +515,7 @@ class TestCreateIssueModal:
         loading_msg = AsyncMock()
         interaction.followup.send.return_value = loading_msg
         await modal.on_submit(interaction)
-        from src.ui import get_cached_pipeline_data
+        from src.cogs.ui import get_cached_pipeline_data
 
         edit_kwargs = loading_msg.edit.call_args.kwargs
         view = edit_kwargs["view"]
@@ -540,7 +540,7 @@ class TestCreateIssueModal:
         loading_msg = AsyncMock()
         interaction.followup.send.return_value = loading_msg
         await modal.on_submit(interaction)
-        from src.ui import get_cached_pipeline_data
+        from src.cogs.ui import get_cached_pipeline_data
 
         edit_kwargs = loading_msg.edit.call_args.kwargs
         view = edit_kwargs["view"]

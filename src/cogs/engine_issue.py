@@ -7,10 +7,10 @@ from discord.errors import NotFound
 from discord.ext import commands
 
 from src.cogs.create_issue import run_pipeline
-from src.output.discord import fetch_messages_with_metadata, resolve_mentions
+from src.utils.discord import fetch_messages_with_metadata, resolve_mentions
 from src.output.github_client import GitHubClient
-from src.transform.protocol import Transform
-from src.ui import build_error_embed
+from src.transform.transform import Transform
+from src.cogs.ui import build_error_embed
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,7 @@ class EngineIssueCog(commands.Cog):
         topic: str,
         n: int = 20,
     ) -> None:
+        """Defer the interaction, fetch channel messages, and run the pipeline for the hardcoded engine repo."""
         t0 = time.monotonic()
         logger.info("engine-issue invoked: topic=%r n=%d", topic, n)
 
@@ -133,6 +134,7 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Fetch messages anchored before the target, prepend the target, and run the pipeline."""
         t0 = time.monotonic()
         await interaction.response.defer(ephemeral=True)
 

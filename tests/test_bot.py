@@ -4,7 +4,7 @@ import discord
 import pytest
 
 from src.bot import create_bot, _read_required_env
-from src.ui import DeleteView
+from src.cogs.ui import DeleteView
 
 from tests.conftest import TEST_PRIVATE_KEY_PEM
 

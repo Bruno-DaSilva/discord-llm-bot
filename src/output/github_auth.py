@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build_jwt(app_id: str, private_key_pem: str) -> str:
+    """Create a short-lived (10 min) RS256 JWT for GitHub App authentication."""
     now = int(time.time())
     payload = {
         "iat": now,
@@ -37,6 +38,7 @@ class GitHubAppAuth:
         return _build_jwt(self._app_id, self._private_key_pem)
 
     async def get_token(self) -> str:
+        """Return a cached installation access token, or fetch a new one if expired or missing."""
         if self._cached_token and time.time() < self._token_expires_at:
             return self._cached_token
 

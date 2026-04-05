@@ -4,7 +4,7 @@ import discord
 import pytest
 
 from src.models import CachedOutputData
-from src.ui import (
+from src.cogs.ui import (
     CancelButton,
     ConfirmButton,
     DeleteButton,

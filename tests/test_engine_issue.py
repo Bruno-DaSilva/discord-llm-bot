@@ -4,8 +4,8 @@ import discord
 import pytest
 
 from src.cogs.engine_issue import EngineIssueCog, EngineIssueModal, REPO
-from src.output.discord import FetchResult
-from src.ui import ConfirmButton, ErrorView
+from src.utils.discord import FetchResult
+from src.cogs.ui import ConfirmButton, ErrorView
 
 from tests.conftest import FakeTransform, mock_interaction as _mock_interaction
 
@@ -78,7 +78,7 @@ class TestEngineIssueCog:
         edit_kwargs = loading_msg.edit.call_args.kwargs
         view = edit_kwargs["view"]
         confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
-        from src.ui import get_cached_pipeline_data
+        from src.cogs.ui import get_cached_pipeline_data
 
         cached = get_cached_pipeline_data(confirm_btn.cache_key)
         assert cached.extra["owner"] == "beyond-all-reason"
@@ -171,7 +171,7 @@ class TestEngineIssueModal:
         edit_kwargs = loading_msg.edit.call_args.kwargs
         view = edit_kwargs["view"]
         confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
-        from src.ui import get_cached_pipeline_data
+        from src.cogs.ui import get_cached_pipeline_data
 
         cached = get_cached_pipeline_data(confirm_btn.cache_key)
         assert cached.extra["owner"] == "beyond-all-reason"

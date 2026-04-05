@@ -139,7 +139,7 @@ def make_cached(
 # ---------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    from src.ui import _retry_cache
+    from src.cogs.ui import _retry_cache
 
     _retry_cache.clear()
     yield

@@ -43,6 +43,7 @@ async def create_issue(
     body: str,
     token: str,
 ) -> str:
+    """POST a new issue to the GitHub API and return the HTML URL of the created issue."""
     logger.info("Creating issue on %s/%s", owner, repo)
     response = await client.post(
         f"https://api.github.com/repos/{owner}/{repo}/issues",
@@ -75,6 +76,7 @@ class GitHubService:
 
 
 def append_footer(body: str, author: str, message_link: str | None) -> str:
+    """Append an attribution footer with author name and optional Discord message link."""
     footer = f"\n\n------\nAuthor: {author}"
     if message_link:
         footer += f"\nDiscord: {message_link}"

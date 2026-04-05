@@ -8,11 +8,11 @@ from discord.ext import commands
 
 from src.cogs.registry import register_handler
 from src.models import CachedCommandData, CachedOutputData, PipelineData
-from src.output.discord import fetch_messages_with_metadata, resolve_mentions
+from src.utils.discord import fetch_messages_with_metadata, resolve_mentions
 from src.output.github import RepoNotInstalled, append_footer
 from src.output.github_client import GitHubClient
-from src.transform.protocol import Transform
-from src.ui import (
+from src.transform.transform import Transform
+from src.cogs.ui import (
     DeleteView,
     ErrorView,
     OutputErrorView,
@@ -36,6 +36,7 @@ class CreateIssueHandler:
     async def on_confirm(
         self, interaction: discord.Interaction, cached: CachedCommandData
     ) -> None:
+        """Extract title/body from the preview embed, append a footer, and create the GitHub issue."""
         issue_body = interaction.message.embeds[0].description
         lines = issue_body.strip().split("\n", 1)
         title = lines[0].lstrip("# ").strip()
@@ -79,6 +80,7 @@ class CreateIssueHandler:
     async def on_retry(
         self, interaction: discord.Interaction, cached: CachedCommandData
     ) -> None:
+        """Show a loading state, re-run the transform, and display a new preview or error."""
         loading_view = PreviewView(cmd_type=CMD_TYPE, loading=True)
         await interaction.response.edit_message(view=loading_view)
 
@@ -102,6 +104,7 @@ class CreateIssueHandler:
     async def on_output_retry(
         self, interaction: discord.Interaction, cached: CachedOutputData
     ) -> None:
+        """Retry a previously failed GitHub issue creation using the cached payload."""
         title = cached.payload["title"]
         body = cached.payload["body"]
         owner = cached.payload["owner"]
@@ -132,75 +135,6 @@ class CreateIssueHandler:
         await interaction.channel.send(
             content=f"Issue created: {url}", view=DeleteView()
         )
-
-
-async def run_pipeline(
-    interaction: discord.Interaction,
-    *,
-    transform: Transform,
-    github: GitHubClient,
-    repo: str,
-    topic: str,
-    messages: list[str],
-    latest_message_link: str | None,
-    ephemeral: bool = False,
-) -> None:
-    data = PipelineData(
-        context={"messages": messages},
-        input=topic,
-    )
-
-    owner, repo_name = repo.split("/", 1)
-
-    loading_embed = discord.Embed(
-        description="Generating issue\N{HORIZONTAL ELLIPSIS}",
-        color=discord.Color.blurple(),
-    )
-    loading_msg = await interaction.followup.send(
-        embed=loading_embed, ephemeral=ephemeral, wait=True
-    )
-
-    try:
-        await github.check_repo_installation(owner, repo_name)
-    except RepoNotInstalled:
-        embed = discord.Embed(
-            title="Repository not available",
-            description=(
-                f"The GitHub App is not installed on **{owner}/{repo_name}**.\n\n"
-                "Ask the repository owner to install the app, then try again."
-            ),
-            color=discord.Color.red(),
-        )
-        await loading_msg.edit(embed=embed)
-        return
-
-    cached = CachedCommandData(
-        cmd_type=CMD_TYPE,
-        pipeline_data=data,
-        extra={
-            "author_username": interaction.user.display_name,
-            "latest_message_link": latest_message_link,
-            "owner": owner,
-            "repo": repo_name,
-        },
-    )
-    retry_key = cache_pipeline_data(cached)
-
-    try:
-        result = await transform.run(data)
-    except Exception as exc:
-        logger.exception("Transform failed")
-        embed = build_error_embed(exc)
-        view = ErrorView(cmd_type=CMD_TYPE, retry_key=retry_key)
-        await loading_msg.edit(embed=embed, view=view)
-        return
-
-    view = PreviewView(
-        cmd_type=CMD_TYPE, cache_key=retry_key, confirm_label="Create"
-    )
-
-    embed = discord.Embed(description=result.input)
-    await loading_msg.edit(embed=embed, view=view)
 
 
 class CreateIssueCog(commands.Cog):
@@ -250,6 +184,7 @@ class CreateIssueCog(commands.Cog):
         topic: str,
         n: int,
     ) -> None:
+        """Defer the interaction, fetch channel messages, and run the issue-creation pipeline."""
         t0 = time.monotonic()
         logger.info("create-issue invoked: repo=%s topic=%r n=%d", repo, topic, n)
 
@@ -357,6 +292,7 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Fetch messages anchored before the target, prepend the target, and run the pipeline."""
         t0 = time.monotonic()
         await interaction.response.defer(ephemeral=True)
 
@@ -412,3 +348,72 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
             logger.exception("create-issue modal failed")
             embed = build_error_embed(exc)
             await interaction.followup.send(embed=embed, ephemeral=True)
+
+async def run_pipeline(
+    interaction: discord.Interaction,
+    *,
+    transform: Transform,
+    github: GitHubClient,
+    repo: str,
+    topic: str,
+    messages: list[str],
+    latest_message_link: str | None,
+    ephemeral: bool = False,
+) -> None:
+    """Check repo installation, run the LLM transform, and display a preview with confirm/retry/cancel buttons."""
+    data = PipelineData(
+        context={"messages": messages},
+        input=topic,
+    )
+
+    owner, repo_name = repo.split("/", 1)
+
+    loading_embed = discord.Embed(
+        description="Generating issue\N{HORIZONTAL ELLIPSIS}",
+        color=discord.Color.blurple(),
+    )
+    loading_msg = await interaction.followup.send(
+        embed=loading_embed, ephemeral=ephemeral, wait=True
+    )
+
+    try:
+        await github.check_repo_installation(owner, repo_name)
+    except RepoNotInstalled:
+        embed = discord.Embed(
+            title="Repository not available",
+            description=(
+                f"The GitHub App is not installed on **{owner}/{repo_name}**.\n\n"
+                "Ask the repository owner to install the app, then try again."
+            ),
+            color=discord.Color.red(),
+        )
+        await loading_msg.edit(embed=embed)
+        return
+
+    cached = CachedCommandData(
+        cmd_type=CMD_TYPE,
+        pipeline_data=data,
+        extra={
+            "author_username": interaction.user.display_name,
+            "latest_message_link": latest_message_link,
+            "owner": owner,
+            "repo": repo_name,
+        },
+    )
+    retry_key = cache_pipeline_data(cached)
+
+    try:
+        result = await transform.run(data)
+    except Exception as exc:
+        logger.exception("Transform failed")
+        embed = build_error_embed(exc)
+        view = ErrorView(cmd_type=CMD_TYPE, retry_key=retry_key)
+        await loading_msg.edit(embed=embed, view=view)
+        return
+
+    view = PreviewView(
+        cmd_type=CMD_TYPE, cache_key=retry_key, confirm_label="Create"
+    )
+
+    embed = discord.Embed(description=result.input)
+    await loading_msg.edit(embed=embed, view=view)

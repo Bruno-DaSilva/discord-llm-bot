@@ -12,7 +12,7 @@ from src.cogs.engine_issue import EngineIssueCog
 from src.output.github import GitHubService
 from src.output.github_auth import GitHubAppAuth
 from src.transform.gemini import IssueGeneratorTransform
-from src.ui import (
+from src.cogs.ui import (
     CancelButton,
     ConfirmButton,
     DeleteView,
@@ -46,6 +46,7 @@ class IssueBot(commands.Bot):
         super().__init__(**kwargs)
 
     async def setup_hook(self) -> None:
+        """Register persistent views, create HTTP/GitHub/Gemini clients, load cogs, and sync the command tree."""
         self.add_view(DeleteView())
         self.add_dynamic_items(
             ConfirmButton, RetryButton, CancelButton, OutputRetryButton
@@ -109,7 +110,7 @@ def create_bot(
 
 
 if __name__ == "__main__":
-    from src.logging_config import setup_logging
+    from src.utils.logging_config import setup_logging
 
     setup_logging()
 

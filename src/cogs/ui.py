@@ -22,6 +22,7 @@ def _evict_expired() -> None:
 
 
 def cache_pipeline_data(data: CachedCommandData | CachedOutputData) -> str:
+    """Evict stale entries, store data under a random 8-char key, and return the key."""
     _evict_expired()
     key = uuid.uuid4().hex[:8]
     _retry_cache[key] = (time.monotonic(), data)
@@ -31,6 +32,7 @@ def cache_pipeline_data(data: CachedCommandData | CachedOutputData) -> str:
 def get_cached_pipeline_data(
     key: str,
 ) -> CachedCommandData | CachedOutputData | None:
+    """Return cached data for key, or None if missing. Deletes the entry if expired."""
     entry = _retry_cache.get(key)
     if entry is None:
         return None
@@ -101,6 +103,7 @@ class ConfirmButton(
         return cls(cmd_type=match["cmd_type"], cache_key=match["key"])
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        """Look up cached data and dispatch to the registered handler's on_confirm."""
         logger.info("Confirm button pressed: cmd_type=%s", self.cmd_type)
 
         cached = get_cached_pipeline_data(self.cache_key)
@@ -149,6 +152,7 @@ class RetryButton(
         return cls(cmd_type=match["cmd_type"], retry_key=match["key"])
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        """Look up cached CachedCommandData and dispatch to the registered handler's on_retry."""
         data = get_cached_pipeline_data(self.retry_key)
         if data is None or not isinstance(data, CachedCommandData):
             await interaction.response.send_message(
@@ -226,6 +230,7 @@ class OutputRetryButton(
         return cls(cmd_type=match["cmd_type"], retry_key=match["key"])
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        """Look up cached CachedOutputData and dispatch to the registered handler's on_output_retry."""
         cached = get_cached_pipeline_data(self.retry_key)
         if not isinstance(cached, CachedOutputData):
             await interaction.response.send_message(
@@ -261,6 +266,7 @@ class PreviewView(discord.ui.View):
         confirm_label: str = "Confirm",
         loading: bool = False,
     ) -> None:
+        """Build a preview view. If loading, shows a single disabled button; otherwise adds confirm/cancel/retry."""
         super().__init__(timeout=None)
         if loading:
             self.add_item(

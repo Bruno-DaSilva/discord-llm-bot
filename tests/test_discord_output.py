@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.output.discord import (
+from src.utils.discord import (
     fetch_messages_with_metadata,
     format_message,
     resolve_mentions,

@@ -15,6 +15,7 @@ def resolve_mentions(
     role_mentions: list,
     channel_mentions: list,
 ) -> str:
+    """Replace raw Discord mention markup (<@id>, <@&id>, <#id>) with human-readable names."""
     for user in mentions:
         content = content.replace(f"<@{user.id}>", f"@{user.display_name}")
         content = content.replace(f"<@!{user.id}>", f"@{user.display_name}")
@@ -26,6 +27,7 @@ def resolve_mentions(
 
 
 def format_message(msg: discord.Message) -> str:
+    """Format a Discord message as 'Author: content', appending any embed titles, descriptions, and fields."""
     resolved_content = resolve_mentions(
         msg.content, msg.mentions, msg.role_mentions, msg.channel_mentions
     )
@@ -48,6 +50,7 @@ def format_message(msg: discord.Message) -> str:
 async def fetch_messages_with_metadata(
     channel: discord.abc.Messageable, limit: int, before: discord.Message | None = None
 ) -> FetchResult:
+    """Fetch up to *limit* messages from the channel, return them in chronological order with a link to the latest."""
     messages = []
     latest_message_link = None
     first = True
