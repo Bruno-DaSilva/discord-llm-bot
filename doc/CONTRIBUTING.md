@@ -13,23 +13,19 @@ Use `cogs/create_issue.py` as a reference implementation.
            return PipelineData(input=result, context={...})
    ```
 
-2. **Write a pipeline** in `pipeline/` that orchestrates business logic (no Discord imports). See `pipeline/create_issue.py` for reference:
-   - Build `PipelineData`, run transforms, call outputs
-   - Pure functions for data construction and parsing
-   - Thin async wrappers for external calls
+2. **Write a pipeline** in `pipeline/` that orchestrates the full workflow. See `pipeline/create_issue.py` for reference. The pipeline:
+   - Builds `PipelineData`, runs transforms, calls outputs
+   - Implements the `CommandHandler` protocol (`on_confirm`, `on_retry`, `on_output_retry`)
+   - Has a `run()` method that handles loading states, previews, and error views
+   - Pure functions for data construction and parsing where possible
 
-3. **Write a command handler** implementing three methods (delegates to pipeline for business logic):
-   - `on_confirm(interaction, cached: CachedCommandData)` -- what happens when the user clicks Confirm
-   - `on_retry(interaction, cached: CachedCommandData)` -- re-run transforms, return new result
-   - `on_output_retry(interaction, cached: CachedOutputData)` -- retry a failed output action
-
-4. **Write a Cog** that:
-   - Registers the handler: `register_handler("my_cmd", handler)`
+3. **Write a Cog** that:
+   - Registers the pipeline as the handler: `register_handler("my_cmd", pipeline)`
    - Defines slash commands / context menus
-   - Handles Discord presentation (defer, loading embeds, preview views)
-   - Delegates business logic to the pipeline
+   - Defers interactions, fetches messages, and calls `pipeline.run()`
+   - Cogs should contain no business logic
 
-5. **Load the Cog** in `bot.py`'s `setup_hook()`.
+4. **Load the Cog** in `bot.py`'s `setup_hook()`.
 
 The generic buttons (`ConfirmButton`, `RetryButton`, etc.) handle the rest -- they dispatch to your handler based on `cmd_type`.
 
