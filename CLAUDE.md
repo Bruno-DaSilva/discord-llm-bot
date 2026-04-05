@@ -1,21 +1,20 @@
 # Discord Issue Bot
 
-Discord bot providing `/create-issue` slash command to generate GitHub issues from channel messages using Gemini AI. Built with discord.py, hosted in Docker.
+Discord bot providing slash commands and context menus to generate GitHub issues from channel messages using Gemini AI. Built with discord.py, hosted in Docker.
 
 ## Directory Structure
 
 ```
 src/                — application source
   bot.py            — composition root (entry point, env reads)
-  models.py         — shared data models (PipelineData)
-  ui.py             — Discord UI views
+  models.py         — shared data models (PipelineData, cached types)
+  ui.py             — generic buttons, views, and retry cache
   logging_config.py — logging setup
-  cogs/             — Discord slash commands
-  input/            — pipeline input layer (file reading)
-  transform/        — pipeline transform layer (incl LLM calls)
+  cogs/             — slash commands, context menus, and handler registry
+  transform/        — pipeline transform layer (LLM calls, data modifications)
   output/           — pipeline output layer (GitHub, Discord)
 tests/              — mirrors src/ as test_<module>.py
-doc/                — architecture & design docs
+doc/                — architecture, requirements, and design docs
 ```
 
 ## TDD Workflow (MANDATORY)
@@ -36,7 +35,7 @@ doc/                — architecture & design docs
 
 ## Architecture
 
-See `doc/ARCHITECTURE.md` for the full pipeline architecture (three layers: Command -> Transform -> Output) and the `PipelineData` contract.
+See `doc/ARCHITECTURE.md` for the full pipeline architecture (Command -> Transform -> Output), the `PipelineData` contract, and the command handler registry. See `doc/CONTRIBUTING.md` for how to add new commands and transforms.
 
 ## Testing
 
@@ -49,7 +48,7 @@ See `doc/ARCHITECTURE.md` for the full pipeline architecture (three layers: Comm
 
 - **Deferral**: Use `interaction.response.defer()` for long-running commands, then `interaction.edit_original_response()` with the result
 - **Dependency injection**: Functions accept config/secrets as parameters -- no `os.environ` reads except in `bot.py` (composition root)
-- **Stateless**: Lean on `discord.ui.View` instance attributes for state between interactions
+- **In-memory cache**: State between interactions (retry data, pipeline data) is stored in a process-level cache with 24hr TTL. See `doc/STATE.md`.
 - **Privileged intents**: `MessageContent` intent must be enabled in Discord Developer Portal
 
 ## Secrets (via environment variables)
