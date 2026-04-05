@@ -1,0 +1,29 @@
+name: Deploy
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: "read"
+      packages: "write"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+      - name: Trigger update
+        run: |
+          echo "$SSH_KEY" > id.key
+          chmod og-rwx id.key
+          ssh -i id.key -o StrictHostKeyChecking=no ${{ vars.SSH_TARGET_USER }}@${{ vars.SSH_TARGET_HOST }} podman-auto-update
+        env:
+          SSH_KEY: ${{ secrets.SSH_TARGET_DEPLOY_KEY }}

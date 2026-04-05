@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -euo pipefail
+
+case "$1" in
+    podman-auto-update)
+        podman auto-update --format json
+        ;;
+    get-logs)
+        journalctl --user -u {{ bot_name }} --since="1d ago" --no-pager
+        ;;
+    *)
+        echo "Unknown command"
+        exit 1
+        ;;
+esac

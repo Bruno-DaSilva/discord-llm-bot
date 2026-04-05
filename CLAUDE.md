@@ -28,11 +28,11 @@ doc/                — architecture, requirements, and design docs
 
 ## Commands
 
-- `pip install -r requirements.txt -r requirements-dev.txt` -- install all dependencies
-- `.venv/bin/python -m pytest` -- run tests
-- `.venv/bin/python -m pytest --cov=src` -- run tests with coverage
-- `.venv/bin/ruff check src/ tests/` -- lint
-- `.venv/bin/ruff format src/ tests/` -- auto-format
+- `uv sync` -- install all dependencies (main + dev group)
+- `uv run pytest` -- run tests
+- `uv run pytest --cov=src` -- run tests with coverage
+- `uv run ruff check src/ tests/` -- lint
+- `uv run ruff format src/ tests/` -- auto-format
 
 ## Architecture
 

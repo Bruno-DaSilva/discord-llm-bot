@@ -1,0 +1,14 @@
+name: Get Server Logs
+on:
+  workflow_dispatch:
+jobs:
+  get-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Logs
+        run: |
+          echo "$SSH_KEY" > id.key
+          chmod og-rwx id.key
+          ssh -i id.key -o StrictHostKeyChecking=no ${{ vars.SSH_TARGET_USER }}@${{ vars.SSH_TARGET_HOST }} get-logs
+        env:
+          SSH_KEY: ${{ secrets.SSH_TARGET_DEPLOY_KEY }}

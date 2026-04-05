@@ -1,0 +1,3 @@
+[bot_servers]
+# Add your server here, e.g.:
+# my_bot_server ansible_host=1.2.3.4 ansible_user=debian
