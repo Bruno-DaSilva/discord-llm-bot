@@ -36,6 +36,7 @@ class IssuePipeline:
                 "latest_message_link": latest_message_link,
                 "owner": owner,
                 "repo": repo,
+                "model": self.transform.model,
             },
         )
 
@@ -59,6 +60,9 @@ class IssuePipeline:
 
     @staticmethod
     def build_issue_body(
-        body: str, author_username: str, latest_message_link: str | None
+        body: str,
+        author_username: str,
+        latest_message_link: str | None,
+        model: str | None = None,
     ) -> str:
-        return append_footer(body, author_username, latest_message_link)
+        return append_footer(body, author_username, latest_message_link, model=model)

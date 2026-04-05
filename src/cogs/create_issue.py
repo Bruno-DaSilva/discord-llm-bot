@@ -40,6 +40,7 @@ class CreateIssueHandler:
             body,
             cached.extra["author_username"],
             cached.extra.get("latest_message_link"),
+            model=cached.extra.get("model"),
         )
 
         owner = cached.extra["owner"]

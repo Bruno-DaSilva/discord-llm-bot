@@ -157,3 +157,13 @@ class TestAppendFooter:
     def test_preserves_original_body(self):
         result = append_footer("Original content here", author="bob", message_link=None)
         assert result.startswith("Original content here")
+
+    def test_adds_model(self):
+        result = append_footer(
+            "Issue body", author="alice", message_link=None, model="gemini-3-flash-preview"
+        )
+        assert "Model: gemini-3-flash-preview" in result
+
+    def test_omits_model_when_none(self):
+        result = append_footer("Issue body", author="alice", message_link=None, model=None)
+        assert "Model:" not in result

@@ -49,6 +49,8 @@ def _clear_proxy_env():
 class FakeTransform:
     """Satisfies Transform protocol. Returns configurable output, records calls."""
 
+    model: str = "fake-model"
+
     def __init__(self, output_text="# Title\nBody"):
         self.output_text = output_text
         self.calls: list[PipelineData] = []

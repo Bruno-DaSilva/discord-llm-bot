@@ -75,9 +75,16 @@ class GitHubService:
         await check_repo_installation(self._client, owner, repo, app_jwt)
 
 
-def append_footer(body: str, author: str, message_link: str | None) -> str:
-    """Append an attribution footer with author name and optional Discord message link."""
+def append_footer(
+    body: str,
+    author: str,
+    message_link: str | None,
+    model: str | None = None,
+) -> str:
+    """Append an attribution footer with author name, optional Discord message link, and optional model name."""
     footer = f"\n\n------\nAuthor: {author}"
     if message_link:
         footer += f"\nDiscord: {message_link}"
+    if model:
+        footer += f"\nModel: {model}"
     return body + footer

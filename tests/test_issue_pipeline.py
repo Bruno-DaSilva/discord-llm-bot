@@ -68,6 +68,12 @@ class TestBuildIssueBody:
         assert "alice" in result
         assert "Discord" not in result
 
+    def test_includes_model(self):
+        result = IssuePipeline.build_issue_body(
+            "body text", "alice", None, model="gemini-3-flash-preview"
+        )
+        assert "Model: gemini-3-flash-preview" in result
+
 
 class TestGenerate:
     @pytest.mark.asyncio
