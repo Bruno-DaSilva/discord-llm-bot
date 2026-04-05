@@ -7,11 +7,12 @@ The main goal of this architecture is to make it easy to add new entrypoints (ne
 ## Layers
 
 ```
-Command (parse + orchestrate)
-  → Transform (domain logic, in → out)
-  → Transform (domain logic, in → out)
-    → Output (deliver to external system)
-    → Output (deliver to external system)
+Command (parse + present)
+  → Pipeline (orchestrate business logic)
+    → Transform (domain logic, in → out)
+    → Transform (domain logic, in → out)
+      → Output (deliver to external system)
+      → Output (deliver to external system)
 ```
 
 ### Command layer
@@ -26,11 +27,17 @@ Responsibilities:
 - Wire transforms and outputs together
 - Return any data/messages back to the user
 
-Each command writes its own orchestration -- there is no declarative pipeline runner. Transforms are reusable building blocks, but the sequencing and data shaping between steps is explicit per command. This is mostly because there is some required data reshaping between transform steps.
-
-Future versions may add a layer in between command <-> transform to hold the pipeline logic, so the same pipeline can be more easily reused by multiple commands.
+Each command writes its own presentation orchestration (deferring, loading embeds, previews), but delegates business logic to the pipeline layer.
 
 Modules: `bot.py` (composition root), `cogs/create_issue.py`, `cogs/engine_issue.py`, `cogs/registry.py`
+
+### Pipeline layer
+
+Reusable service classes that orchestrate business logic between transforms and outputs. Each pipeline encapsulates the data construction, transform execution, and output calls for a specific workflow — without any Discord imports.
+
+Cogs delegate to pipelines for all non-presentation work. This means the same pipeline can be shared by multiple commands (e.g., `create-issue` and `engine-issue` both use `IssuePipeline`).
+
+Modules: `pipeline/create_issue.py`
 
 ### Transform layer
 
@@ -99,28 +106,23 @@ Interactive components for the preview → confirm/retry/cancel flow. Defined in
 ## Pipeline example: create-issue
 
 ```
-1. Command (Cog): parse /create-issue options from interaction
-   → build PipelineData { context: {messages: [...]}, input: topic }
+1. Command (Cog): parse /create-issue options, defer interaction, fetch messages
 
-2. Transform (gemini): PipelineData in → PipelineData out
+2. Pipeline (IssuePipeline): build_pipeline_data(), check_repo(), generate()
+   → Transform (gemini): PipelineData in → PipelineData out
    → builds prompt from context + input, calls LLM
    → returns PipelineData { context: {..., generated: [...]}, input: issue body }
 
-3. UI: show preview embed with Confirm / Cancel / Retry buttons
+3. Command (Cog): show preview embed with Confirm / Cancel / Retry buttons
    → cache PipelineData for potential retry
 
 4. User clicks Confirm → handler.on_confirm():
+   → Pipeline: parse_preview(), build_issue_body(), create_issue()
    → Output (github): create_issue(owner, repo, title, body)
-   → Output (discord): post new message to thread/channel with issue URL
+   → Output (discord): post new message with issue URL
 ```
 
-A more complex pipeline might chain multiple transforms with data reshaping between steps:
-
-```
-Command → Transform A → reshape → Transform B → Preview → Confirm → Outputs
-```
-
-Each transform receives the previous one's `PipelineData` and returns a new one. The command layer controls the chain order and handles any data reshaping between steps.
+Both `/create-issue` and `/engine-issue` share the same `IssuePipeline` instance. The only difference is where the repo comes from (user parameter vs. hardcoded constant).
 
 ## Module rules
 

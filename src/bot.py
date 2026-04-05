@@ -11,6 +11,7 @@ from src.cogs.create_issue import CreateIssueCog
 from src.cogs.engine_issue import EngineIssueCog
 from src.output.github import GitHubService
 from src.output.github_auth import GitHubAppAuth
+from src.pipeline.create_issue import IssuePipeline
 from src.transform.gemini import IssueGeneratorTransform
 from src.cogs.ui import (
     CancelButton,
@@ -66,20 +67,13 @@ class IssueBot(commands.Bot):
 
         gemini_client = genai.Client(api_key=self.gemini_api_key)
         transform = IssueGeneratorTransform(client=gemini_client)
+        pipeline = IssuePipeline(transform=transform, github=self.github)
 
-        cog = CreateIssueCog(
-            self,
-            transform=transform,
-            github=self.github,
-        )
+        cog = CreateIssueCog(self, pipeline=pipeline)
         await self.add_cog(cog)
         logger.info("CreateIssueCog loaded")
 
-        engine_cog = EngineIssueCog(
-            self,
-            transform=transform,
-            github=self.github,
-        )
+        engine_cog = EngineIssueCog(self, pipeline=pipeline)
         await self.add_cog(engine_cog)
         logger.info("EngineIssueCog loaded")
 

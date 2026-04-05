@@ -8,8 +8,7 @@ from discord.ext import commands
 
 from src.cogs.create_issue import run_pipeline
 from src.utils.discord import fetch_messages_with_metadata, resolve_mentions
-from src.output.github_client import GitHubClient
-from src.transform.transform import Transform
+from src.pipeline.create_issue import IssuePipeline
 from src.cogs.ui import build_error_embed
 
 logger = logging.getLogger(__name__)
@@ -18,12 +17,9 @@ REPO = "beyond-all-reason/recoilengine"
 
 
 class EngineIssueCog(commands.Cog):
-    def __init__(
-        self, bot: commands.Bot, transform: Transform, github: GitHubClient
-    ) -> None:
+    def __init__(self, bot: commands.Bot, pipeline: IssuePipeline) -> None:
         self.bot = bot
-        self.transform = transform
-        self.github = github
+        self.pipeline = pipeline
         self.ctx_menu = app_commands.ContextMenu(
             name="Engine Issue",
             callback=self.engine_issue_context_menu,
@@ -88,8 +84,7 @@ class EngineIssueCog(commands.Cog):
 
             await run_pipeline(
                 interaction,
-                transform=self.transform,
-                github=self.github,
+                pipeline=self.pipeline,
                 repo=REPO,
                 topic=topic,
                 messages=fetch_result.messages,
@@ -172,8 +167,7 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
 
             await run_pipeline(
                 interaction,
-                transform=self.cog.transform,
-                github=self.cog.github,
+                pipeline=self.cog.pipeline,
                 repo=REPO,
                 topic=self.topic.value,
                 messages=messages,

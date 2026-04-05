@@ -7,6 +7,7 @@ import pytest
 from src.cogs.create_issue import CreateIssueCog, CreateIssueHandler, CreateIssueModal
 from src.utils.discord import FetchResult
 from src.output.github import RepoNotInstalled
+from src.pipeline.create_issue import IssuePipeline
 from src.cogs.ui import (
     CancelButton,
     ConfirmButton,
@@ -32,7 +33,8 @@ def cog(bot):
     mock_github.create_issue = AsyncMock(
         return_value="https://github.com/o/r/issues/1"
     )
-    return CreateIssueCog(bot, transform=mock_transform, github=mock_github)
+    pipeline = IssuePipeline(transform=mock_transform, github=mock_github)
+    return CreateIssueCog(bot, pipeline=pipeline)
 
 
 class TestCreateIssueCogCommand:
@@ -66,8 +68,8 @@ class TestRunPipeline:
             messages=["user1: hello", "user2: world"],
             latest_message_link="https://discord.com/channels/1/2/3",
         )
-        cog.transform.run.assert_awaited_once()
-        pipeline_data = cog.transform.run.call_args.args[0]
+        cog.pipeline.transform.run.assert_awaited_once()
+        pipeline_data = cog.pipeline.transform.run.call_args.args[0]
         assert pipeline_data.input == "login bug"
         assert pipeline_data.context["messages"] == ["user1: hello", "user2: world"]
 
@@ -110,7 +112,7 @@ class TestRunPipeline:
 
     @pytest.mark.asyncio
     async def test_edits_loading_with_error_on_transform_failure(self, cog):
-        cog.transform.run.side_effect = RuntimeError("Gemini 503")
+        cog.pipeline.transform.run.side_effect = RuntimeError("Gemini 503")
         interaction = _mock_interaction()
         loading_msg = AsyncMock()
         interaction.followup.send.return_value = loading_msg
@@ -146,7 +148,7 @@ class TestRunPipeline:
 
     @pytest.mark.asyncio
     async def test_edits_loading_with_repo_not_installed_error(self, cog):
-        cog.handler.github.check_repo_installation = AsyncMock(
+        cog.pipeline.github.check_repo_installation = AsyncMock(
             side_effect=RepoNotInstalled("acme", "widgets")
         )
         interaction = _mock_interaction()
@@ -165,7 +167,7 @@ class TestRunPipeline:
         assert edit_kwargs["embed"].color == discord.Color.red()
         assert "not installed" in edit_kwargs["embed"].description.lower()
         assert "acme/widgets" in edit_kwargs["embed"].description
-        cog.transform.run.assert_not_awaited()
+        cog.pipeline.transform.run.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_repo_installed_proceeds_to_transform(self, cog):
@@ -177,15 +179,16 @@ class TestRunPipeline:
             messages=["user1: msg"],
             latest_message_link=None,
         )
-        cog.handler.github.check_repo_installation.assert_awaited_once()
-        cog.transform.run.assert_awaited_once()
+        cog.pipeline.github.check_repo_installation.assert_awaited_once()
+        cog.pipeline.transform.run.assert_awaited_once()
 
 
 class TestCreateIssueHandlerRetry:
     @pytest.mark.asyncio
     async def test_on_retry_shows_loading_then_result(self):
         fake = FakeTransform(output_text="# New Title\nNew body")
-        handler = CreateIssueHandler(transform=fake, github=AsyncMock())
+        pipeline = IssuePipeline(transform=fake, github=AsyncMock())
+        handler = CreateIssueHandler(pipeline=pipeline)
 
         cached = make_cached()
         interaction = AsyncMock()
@@ -211,7 +214,8 @@ class TestCreateIssueHandlerRetry:
         mock_transform.run = AsyncMock(
             side_effect=RuntimeError("503 Service Unavailable")
         )
-        handler = CreateIssueHandler(transform=mock_transform, github=AsyncMock())
+        pipeline = IssuePipeline(transform=mock_transform, github=AsyncMock())
+        handler = CreateIssueHandler(pipeline=pipeline)
 
         cached = make_cached()
         interaction = AsyncMock()
@@ -228,7 +232,8 @@ class TestCreateIssueHandlerRetry:
     async def test_on_retry_error_caches_new_key_for_re_retry(self):
         mock_transform = AsyncMock()
         mock_transform.run = AsyncMock(side_effect=RuntimeError("fail"))
-        handler = CreateIssueHandler(transform=mock_transform, github=AsyncMock())
+        pipeline = IssuePipeline(transform=mock_transform, github=AsyncMock())
+        handler = CreateIssueHandler(pipeline=pipeline)
 
         cached = make_cached()
         original_key = cache_pipeline_data(cached)
@@ -290,8 +295,8 @@ class TestCreateIssueCog:
             interaction, repo="owner/repo", topic="login bug", n=10
         )
 
-        cog.transform.run.assert_awaited_once()
-        pipeline_data = cog.transform.run.call_args.args[0]
+        cog.pipeline.transform.run.assert_awaited_once()
+        pipeline_data = cog.pipeline.transform.run.call_args.args[0]
         assert pipeline_data.input == "login bug"
         assert pipeline_data.context["messages"] == [
             "user1: hello",
@@ -331,7 +336,7 @@ class TestCreateIssueCog:
             else call_args.kwargs.get("content", "")
         )
         assert "internal error" in content.lower()
-        cog.transform.run.assert_not_awaited()
+        cog.pipeline.transform.run.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
@@ -351,7 +356,7 @@ class TestCreateIssueCog:
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
     async def test_transform_error_sends_error_embed(self, mock_fetch, cog):
         mock_fetch.return_value = self._mock_fetch_result()
-        cog.transform.run.side_effect = RuntimeError("Gemini 503")
+        cog.pipeline.transform.run.side_effect = RuntimeError("Gemini 503")
 
         interaction = self._mock_interaction()
         loading_msg = AsyncMock()
@@ -497,8 +502,8 @@ class TestCreateIssueModal:
         modal.n._value = "20"
         interaction = _mock_interaction()
         await modal.on_submit(interaction)
-        cog.transform.run.assert_awaited_once()
-        pipeline_data = cog.transform.run.call_args.args[0]
+        cog.pipeline.transform.run.assert_awaited_once()
+        pipeline_data = cog.pipeline.transform.run.call_args.args[0]
         assert pipeline_data.context["messages"][0] == "Alice: something is broken"
         assert pipeline_data.context["messages"][1] == "Bob: earlier"
 
@@ -575,7 +580,8 @@ class TestContextMenu:
     def test_context_menu_registered_on_tree(self, bot):
         mock_transform = AsyncMock()
         mock_transform.run.return_value = MagicMock(input="# Title\nBody", context={})
-        CreateIssueCog(bot, transform=mock_transform, github=AsyncMock())
+        pipeline = IssuePipeline(transform=mock_transform, github=AsyncMock())
+        CreateIssueCog(bot, pipeline=pipeline)
         bot.tree.add_command.assert_called_once()
         cmd = bot.tree.add_command.call_args.args[0]
         assert cmd.name == "Create Issue"

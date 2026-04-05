@@ -7,11 +7,10 @@ from discord.errors import NotFound
 from discord.ext import commands
 
 from src.cogs.registry import register_handler
-from src.models import CachedCommandData, CachedOutputData, PipelineData
+from src.models import CachedCommandData, CachedOutputData
 from src.utils.discord import fetch_messages_with_metadata, resolve_mentions
-from src.output.github import RepoNotInstalled, append_footer
-from src.output.github_client import GitHubClient
-from src.transform.transform import Transform
+from src.output.github import RepoNotInstalled
+from src.pipeline.create_issue import IssuePipeline
 from src.cogs.ui import (
     DeleteView,
     ErrorView,
@@ -23,26 +22,21 @@ from src.cogs.ui import (
 
 logger = logging.getLogger(__name__)
 
-CMD_TYPE = "issue"
-
 
 class CreateIssueHandler:
     """Implements CommandHandler for issue creation."""
 
-    def __init__(self, transform: Transform, github: GitHubClient) -> None:
-        self.transform = transform
-        self.github = github
+    def __init__(self, pipeline: IssuePipeline) -> None:
+        self.pipeline = pipeline
 
     async def on_confirm(
         self, interaction: discord.Interaction, cached: CachedCommandData
     ) -> None:
         """Extract title/body from the preview embed, append a footer, and create the GitHub issue."""
         issue_body = interaction.message.embeds[0].description
-        lines = issue_body.strip().split("\n", 1)
-        title = lines[0].lstrip("# ").strip()
-        body = lines[1].strip() if len(lines) > 1 else ""
+        title, body = self.pipeline.parse_preview(issue_body)
 
-        body = append_footer(
+        body = self.pipeline.build_issue_body(
             body,
             cached.extra["author_username"],
             cached.extra.get("latest_message_link"),
@@ -52,11 +46,11 @@ class CreateIssueHandler:
         repo = cached.extra["repo"]
 
         try:
-            url = await self.github.create_issue(owner, repo, title, body)
+            url = await self.pipeline.create_issue(owner, repo, title, body)
         except Exception as exc:
             logger.exception("Failed to create issue on GitHub")
             github_data = CachedOutputData(
-                cmd_type=CMD_TYPE,
+                cmd_type=IssuePipeline.CMD_TYPE,
                 payload={
                     "title": title,
                     "body": body,
@@ -66,7 +60,9 @@ class CreateIssueHandler:
             )
             new_key = cache_pipeline_data(github_data)
             embed = build_error_embed(exc)
-            view = OutputErrorView(cmd_type=CMD_TYPE, retry_key=new_key)
+            view = OutputErrorView(
+                cmd_type=IssuePipeline.CMD_TYPE, retry_key=new_key
+            )
             await interaction.response.edit_message(embed=embed, view=view)
             return
 
@@ -81,22 +77,24 @@ class CreateIssueHandler:
         self, interaction: discord.Interaction, cached: CachedCommandData
     ) -> None:
         """Show a loading state, re-run the transform, and display a new preview or error."""
-        loading_view = PreviewView(cmd_type=CMD_TYPE, loading=True)
+        loading_view = PreviewView(cmd_type=IssuePipeline.CMD_TYPE, loading=True)
         await interaction.response.edit_message(view=loading_view)
 
         new_key = cache_pipeline_data(cached)
 
         try:
-            result = await self.transform.run(cached.pipeline_data)
+            result = await self.pipeline.generate(cached.pipeline_data)
         except Exception as exc:
             logger.exception("Transform failed in retry")
             embed = build_error_embed(exc)
-            view = ErrorView(cmd_type=CMD_TYPE, retry_key=new_key)
+            view = ErrorView(cmd_type=IssuePipeline.CMD_TYPE, retry_key=new_key)
             await interaction.edit_original_response(embed=embed, view=view)
             return
 
         view = PreviewView(
-            cmd_type=CMD_TYPE, cache_key=new_key, confirm_label="Create"
+            cmd_type=IssuePipeline.CMD_TYPE,
+            cache_key=new_key,
+            confirm_label="Create",
         )
         embed = discord.Embed(description=result.input)
         await interaction.edit_original_response(embed=embed, view=view)
@@ -111,11 +109,11 @@ class CreateIssueHandler:
         repo = cached.payload["repo"]
 
         try:
-            url = await self.github.create_issue(owner, repo, title, body)
+            url = await self.pipeline.create_issue(owner, repo, title, body)
         except Exception as exc:
             logger.exception("GitHub retry failed")
             new_data = CachedOutputData(
-                cmd_type=CMD_TYPE,
+                cmd_type=IssuePipeline.CMD_TYPE,
                 payload={
                     "title": title,
                     "body": body,
@@ -125,7 +123,9 @@ class CreateIssueHandler:
             )
             new_key = cache_pipeline_data(new_data)
             embed = build_error_embed(exc)
-            view = OutputErrorView(cmd_type=CMD_TYPE, retry_key=new_key)
+            view = OutputErrorView(
+                cmd_type=IssuePipeline.CMD_TYPE, retry_key=new_key
+            )
             await interaction.response.edit_message(embed=embed, view=view)
             return
 
@@ -138,13 +138,11 @@ class CreateIssueHandler:
 
 
 class CreateIssueCog(commands.Cog):
-    def __init__(
-        self, bot: commands.Bot, transform: Transform, github: GitHubClient
-    ) -> None:
+    def __init__(self, bot: commands.Bot, pipeline: IssuePipeline) -> None:
         self.bot = bot
-        self.transform = transform
-        self.handler = CreateIssueHandler(transform, github)
-        register_handler(CMD_TYPE, self.handler)
+        self.pipeline = pipeline
+        self.handler = CreateIssueHandler(pipeline)
+        register_handler(IssuePipeline.CMD_TYPE, self.handler)
         self.ctx_menu = app_commands.ContextMenu(
             name="Create Issue",
             callback=self.create_issue_context_menu,
@@ -247,8 +245,7 @@ class CreateIssueCog(commands.Cog):
     ) -> None:
         await run_pipeline(
             interaction,
-            transform=self.transform,
-            github=self.handler.github,
+            pipeline=self.pipeline,
             repo=repo,
             topic=topic,
             messages=messages,
@@ -352,8 +349,7 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
 async def run_pipeline(
     interaction: discord.Interaction,
     *,
-    transform: Transform,
-    github: GitHubClient,
+    pipeline: IssuePipeline,
     repo: str,
     topic: str,
     messages: list[str],
@@ -361,10 +357,7 @@ async def run_pipeline(
     ephemeral: bool = False,
 ) -> None:
     """Check repo installation, run the LLM transform, and display a preview with confirm/retry/cancel buttons."""
-    data = PipelineData(
-        context={"messages": messages},
-        input=topic,
-    )
+    data = pipeline.build_pipeline_data(topic, messages)
 
     owner, repo_name = repo.split("/", 1)
 
@@ -377,7 +370,7 @@ async def run_pipeline(
     )
 
     try:
-        await github.check_repo_installation(owner, repo_name)
+        await pipeline.check_repo(owner, repo_name)
     except RepoNotInstalled:
         embed = discord.Embed(
             title="Repository not available",
@@ -390,29 +383,28 @@ async def run_pipeline(
         await loading_msg.edit(embed=embed)
         return
 
-    cached = CachedCommandData(
-        cmd_type=CMD_TYPE,
-        pipeline_data=data,
-        extra={
-            "author_username": interaction.user.display_name,
-            "latest_message_link": latest_message_link,
-            "owner": owner,
-            "repo": repo_name,
-        },
+    cached = pipeline.build_cached_data(
+        data,
+        author_username=interaction.user.display_name,
+        latest_message_link=latest_message_link,
+        owner=owner,
+        repo=repo_name,
     )
     retry_key = cache_pipeline_data(cached)
 
     try:
-        result = await transform.run(data)
+        result = await pipeline.generate(data)
     except Exception as exc:
         logger.exception("Transform failed")
         embed = build_error_embed(exc)
-        view = ErrorView(cmd_type=CMD_TYPE, retry_key=retry_key)
+        view = ErrorView(cmd_type=IssuePipeline.CMD_TYPE, retry_key=retry_key)
         await loading_msg.edit(embed=embed, view=view)
         return
 
     view = PreviewView(
-        cmd_type=CMD_TYPE, cache_key=retry_key, confirm_label="Create"
+        cmd_type=IssuePipeline.CMD_TYPE,
+        cache_key=retry_key,
+        confirm_label="Create",
     )
 
     embed = discord.Embed(description=result.input)

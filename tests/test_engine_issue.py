@@ -5,6 +5,7 @@ import pytest
 
 from src.cogs.engine_issue import EngineIssueCog, EngineIssueModal, REPO
 from src.utils.discord import FetchResult
+from src.pipeline.create_issue import IssuePipeline
 from src.cogs.ui import ConfirmButton, ErrorView
 
 from tests.conftest import FakeTransform, mock_interaction as _mock_interaction
@@ -19,7 +20,8 @@ def cog(bot):
     mock_github.create_issue = AsyncMock(
         return_value="https://github.com/o/r/issues/1"
     )
-    return EngineIssueCog(bot, transform=mock_transform, github=mock_github)
+    pipeline = IssuePipeline(transform=mock_transform, github=mock_github)
+    return EngineIssueCog(bot, pipeline=pipeline)
 
 
 class TestEngineIssueCogCommand:
@@ -98,13 +100,13 @@ class TestEngineIssueCog:
             else call_args.kwargs.get("content", "")
         )
         assert "internal error" in content.lower()
-        cog.transform.run.assert_not_awaited()
+        cog.pipeline.transform.run.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch("src.cogs.engine_issue.fetch_messages_with_metadata")
     async def test_transform_error_sends_error_embed(self, mock_fetch, cog):
         mock_fetch.return_value = self._mock_fetch_result()
-        cog.transform.run.side_effect = RuntimeError("Gemini 503")
+        cog.pipeline.transform.run.side_effect = RuntimeError("Gemini 503")
         interaction = _mock_interaction()
         loading_msg = AsyncMock()
         interaction.followup.send.return_value = loading_msg
@@ -189,8 +191,8 @@ class TestEngineIssueModal:
         modal.n._value = "20"
         interaction = _mock_interaction()
         await modal.on_submit(interaction)
-        cog.transform.run.assert_awaited_once()
-        pipeline_data = cog.transform.run.call_args.args[0]
+        cog.pipeline.transform.run.assert_awaited_once()
+        pipeline_data = cog.pipeline.transform.run.call_args.args[0]
         assert pipeline_data.context["messages"][0] == "Alice: something is broken"
         assert pipeline_data.context["messages"][1] == "Bob: earlier"
 
@@ -198,7 +200,8 @@ class TestEngineIssueModal:
 class TestEngineContextMenu:
     def test_context_menu_registered_on_tree(self, bot):
         mock_transform = AsyncMock()
-        EngineIssueCog(bot, transform=mock_transform, github=AsyncMock())
+        pipeline = IssuePipeline(transform=mock_transform, github=AsyncMock())
+        EngineIssueCog(bot, pipeline=pipeline)
         bot.tree.add_command.assert_called_once()
         cmd = bot.tree.add_command.call_args.args[0]
         assert cmd.name == "Engine Issue"

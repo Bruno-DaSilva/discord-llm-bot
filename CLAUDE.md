@@ -11,6 +11,7 @@ src/                — application source
   ui.py             — generic buttons, views, and retry cache
   logging_config.py — logging setup
   cogs/             — slash commands, context menus, and handler registry
+  pipeline/         — pipeline orchestrators (business logic, no Discord imports)
   transform/        — pipeline transform layer (LLM calls, data modifications)
   output/           — pipeline output layer (GitHub, Discord)
 tests/              — mirrors src/ as test_<module>.py
