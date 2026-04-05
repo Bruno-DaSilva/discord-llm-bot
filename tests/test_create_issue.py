@@ -4,23 +4,15 @@ import discord
 
 import pytest
 
-from src.cogs.create_issue import CreateIssueCog, CreateIssueHandler, CreateIssueModal
+from src.cogs.create_issue import CreateIssueCog, CreateIssueModal
 from src.utils.discord import FetchResult
-from src.output.github import RepoNotInstalled
 from src.pipeline.create_issue import IssuePipeline
-from src.cogs.ui import (
-    CancelButton,
-    ConfirmButton,
-    ErrorView,
-    PreviewView,
-    RetryButton,
-    cache_pipeline_data,
-)
 
 from tests.conftest import (
     FakeTransform,
-    make_cached,
+    mock_fetch_result as _mock_fetch_result,
     mock_interaction as _mock_interaction,
+    mock_message as _mock_message,
 )
 
 
@@ -30,17 +22,27 @@ def cog(bot):
     mock_transform = AsyncMock(wraps=fake)
     mock_github = AsyncMock()
     mock_github.check_repo_installation = AsyncMock()
-    mock_github.create_issue = AsyncMock(
-        return_value="https://github.com/o/r/issues/1"
-    )
+    mock_github.create_issue = AsyncMock(return_value="https://github.com/o/r/issues/1")
     pipeline = IssuePipeline(transform=mock_transform, github=mock_github)
     return CreateIssueCog(bot, pipeline=pipeline)
 
 
+def _channel_with_history(*messages):
+    """Attach an async-generator `history` mock to a fresh channel mock."""
+    channel = MagicMock()
+
+    async def history(limit, **kwargs):
+        for m in messages[:limit]:
+            yield m
+
+    channel.history = history
+    return channel
+
+
 class TestCreateIssueCogCommand:
     @pytest.mark.asyncio
-    @patch.object(CreateIssueCog, "_do_create_issue", new_callable=AsyncMock)
-    async def test_command_delegates_to_do_create_issue(self, mock_do, cog):
+    @patch.object(CreateIssueCog, "_run", new_callable=AsyncMock)
+    async def test_command_delegates_to_run(self, mock_run, cog):
         interaction = _mock_interaction()
         await cog.create_issue_command.callback(
             cog,
@@ -49,7 +51,7 @@ class TestCreateIssueCogCommand:
             topic="bug",
             n=10,
         )
-        mock_do.assert_awaited_once_with(
+        mock_run.assert_awaited_once_with(
             interaction,
             repo="owner/repo",
             topic="bug",
@@ -57,328 +59,116 @@ class TestCreateIssueCogCommand:
         )
 
 
-class TestRunPipeline:
-    @pytest.mark.asyncio
-    async def test_calls_transform_with_pipeline_data(self, cog):
-        interaction = _mock_interaction()
-        await cog._run_pipeline(
-            interaction,
-            repo="owner/repo",
-            topic="login bug",
-            messages=["user1: hello", "user2: world"],
-            latest_message_link="https://discord.com/channels/1/2/3",
-        )
-        cog.pipeline.transform.run.assert_awaited_once()
-        pipeline_data = cog.pipeline.transform.run.call_args.args[0]
-        assert pipeline_data.input == "login bug"
-        assert pipeline_data.context["messages"] == ["user1: hello", "user2: world"]
-
-    @pytest.mark.asyncio
-    async def test_sends_loading_message(self, cog):
-        interaction = _mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._run_pipeline(
-            interaction,
-            repo="owner/repo",
-            topic="bug",
-            messages=["user1: msg"],
-            latest_message_link=None,
-        )
-        interaction.followup.send.assert_awaited_once()
-        send_kwargs = interaction.followup.send.call_args.kwargs
-        assert send_kwargs["wait"] is True
-        embed = send_kwargs["embed"]
-        assert "generat" in embed.description.lower()
-
-    @pytest.mark.asyncio
-    async def test_edits_loading_with_preview(self, cog):
-        interaction = _mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._run_pipeline(
-            interaction,
-            repo="owner/repo",
-            topic="bug",
-            messages=["user1: msg"],
-            latest_message_link=None,
-        )
-        loading_msg.edit.assert_awaited_once()
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        assert "# Title" in edit_kwargs["embed"].description
-        assert isinstance(edit_kwargs["view"], PreviewView)
-
-    @pytest.mark.asyncio
-    async def test_edits_loading_with_error_on_transform_failure(self, cog):
-        cog.pipeline.transform.run.side_effect = RuntimeError("Gemini 503")
-        interaction = _mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._run_pipeline(
-            interaction,
-            repo="owner/repo",
-            topic="bug",
-            messages=["user1: msg"],
-            latest_message_link=None,
-        )
-        loading_msg.edit.assert_awaited_once()
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        assert "Gemini 503" in edit_kwargs["embed"].description
-        assert isinstance(edit_kwargs["view"], ErrorView)
-
-    @pytest.mark.asyncio
-    async def test_preview_includes_retry_button(self, cog):
-        interaction = _mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._run_pipeline(
-            interaction,
-            repo="owner/repo",
-            topic="bug",
-            messages=["user1: msg"],
-            latest_message_link="https://discord.com/channels/1/2/3",
-        )
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        view = edit_kwargs["view"]
-        assert any(isinstance(c, RetryButton) for c in view.children)
-
-    @pytest.mark.asyncio
-    async def test_edits_loading_with_repo_not_installed_error(self, cog):
-        cog.pipeline.github.check_repo_installation = AsyncMock(
-            side_effect=RepoNotInstalled("acme", "widgets")
-        )
-        interaction = _mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._run_pipeline(
-            interaction,
-            repo="acme/widgets",
-            topic="bug",
-            messages=["user1: msg"],
-            latest_message_link=None,
-        )
-        loading_msg.edit.assert_awaited_once()
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        assert edit_kwargs["embed"].color == discord.Color.red()
-        assert "not installed" in edit_kwargs["embed"].description.lower()
-        assert "acme/widgets" in edit_kwargs["embed"].description
-        cog.pipeline.transform.run.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_repo_installed_proceeds_to_transform(self, cog):
-        interaction = _mock_interaction()
-        await cog._run_pipeline(
-            interaction,
-            repo="owner/repo",
-            topic="bug",
-            messages=["user1: msg"],
-            latest_message_link=None,
-        )
-        cog.pipeline.github.check_repo_installation.assert_awaited_once()
-        cog.pipeline.transform.run.assert_awaited_once()
-
-
-class TestCreateIssueHandlerRetry:
-    @pytest.mark.asyncio
-    async def test_on_retry_shows_loading_then_result(self):
-        fake = FakeTransform(output_text="# New Title\nNew body")
-        pipeline = IssuePipeline(transform=fake, github=AsyncMock())
-        handler = CreateIssueHandler(pipeline=pipeline)
-
-        cached = make_cached()
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-
-        await handler.on_retry(interaction, cached)
-
-        # Shows loading state first
-        interaction.response.edit_message.assert_awaited_once()
-        loading_view = interaction.response.edit_message.call_args.kwargs["view"]
-        assert len(loading_view.children) == 1
-        assert loading_view.children[0].disabled is True
-
-        # Then replaces with result
-        interaction.edit_original_response.assert_awaited_once()
-        call_kwargs = interaction.edit_original_response.call_args.kwargs
-        assert call_kwargs["embed"].description == "# New Title\nNew body"
-        assert isinstance(call_kwargs["view"], PreviewView)
-
-    @pytest.mark.asyncio
-    async def test_on_retry_transform_error_shows_error_view(self):
-        mock_transform = AsyncMock()
-        mock_transform.run = AsyncMock(
-            side_effect=RuntimeError("503 Service Unavailable")
-        )
-        pipeline = IssuePipeline(transform=mock_transform, github=AsyncMock())
-        handler = CreateIssueHandler(pipeline=pipeline)
-
-        cached = make_cached()
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-
-        await handler.on_retry(interaction, cached)
-
-        interaction.edit_original_response.assert_awaited_once()
-        call_kwargs = interaction.edit_original_response.call_args.kwargs
-        assert "503 Service Unavailable" in call_kwargs["embed"].description
-        assert isinstance(call_kwargs["view"], ErrorView)
-
-    @pytest.mark.asyncio
-    async def test_on_retry_error_caches_new_key_for_re_retry(self):
-        mock_transform = AsyncMock()
-        mock_transform.run = AsyncMock(side_effect=RuntimeError("fail"))
-        pipeline = IssuePipeline(transform=mock_transform, github=AsyncMock())
-        handler = CreateIssueHandler(pipeline=pipeline)
-
-        cached = make_cached()
-        original_key = cache_pipeline_data(cached)
-
-        interaction = AsyncMock()
-        interaction.response = AsyncMock()
-
-        await handler.on_retry(interaction, cached)
-
-        view = interaction.edit_original_response.call_args.kwargs["view"]
-        retry_btn = [c for c in view.children if isinstance(c, RetryButton)][0]
-        assert retry_btn.retry_key != original_key
-
-
 class TestCreateIssueCog:
     def test_cog_instantiation(self, cog, bot):
         assert cog.bot is bot
 
-    def _mock_fetch_result(
-        self, messages=None, link="https://discord.com/channels/1/2/3"
-    ):
-        return FetchResult(
-            messages=messages or ["user1: msg"],
-            latest_message_link=link,
-        )
-
-    def _mock_interaction(self):
-        return _mock_interaction()
-
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_command_defers_first(self, mock_fetch, cog):
-        mock_fetch.return_value = self._mock_fetch_result()
-        interaction = self._mock_interaction()
+    async def test_run_defers_first(self, mock_fetch, cog):
+        mock_fetch.return_value = _mock_fetch_result()
+        anchor = _mock_message()
+        interaction = _mock_interaction()
 
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
+        await cog._run(interaction, repo="owner/repo", topic="bug", n=5, anchor=anchor)
 
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_command_fetches_messages(self, mock_fetch, cog):
-        mock_fetch.return_value = self._mock_fetch_result()
-        interaction = self._mock_interaction()
+    async def test_run_without_anchor_resolves_latest_from_channel(
+        self, mock_fetch, cog
+    ):
+        mock_fetch.return_value = _mock_fetch_result()
+        latest = _mock_message()
+        interaction = _mock_interaction()
+        interaction.channel = _channel_with_history(latest)
 
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
+        await cog._run(interaction, repo="owner/repo", topic="bug", n=5)
 
-        mock_fetch.assert_awaited_once_with(interaction.channel, limit=5)
+        mock_fetch.assert_awaited_once()
+        call_kwargs = mock_fetch.call_args.kwargs
+        assert call_kwargs["limit"] == 5
+        assert call_kwargs["anchor"] is latest
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_command_calls_transform_with_pipeline_data(self, mock_fetch, cog):
-        mock_fetch.return_value = self._mock_fetch_result(
-            messages=["user1: hello", "user2: world"]
+    async def test_run_with_anchor_passes_it_through(self, mock_fetch, cog):
+        mock_fetch.return_value = _mock_fetch_result()
+        anchor = _mock_message()
+        interaction = _mock_interaction()
+
+        await cog._run(interaction, repo="owner/repo", topic="bug", n=7, anchor=anchor)
+
+        mock_fetch.assert_awaited_once()
+        call_kwargs = mock_fetch.call_args.kwargs
+        assert call_kwargs["limit"] == 7
+        assert call_kwargs["anchor"] is anchor
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
+    async def test_run_calls_pipeline(self, mock_fetch, cog):
+        mock_fetch.return_value = _mock_fetch_result(
+            messages=["user1: hello", "user2: world"],
+            link="https://discord.com/channels/1/2/3",
         )
-        interaction = self._mock_interaction()
+        anchor = _mock_message()
+        interaction = _mock_interaction()
 
-        await cog._do_create_issue(
-            interaction, repo="owner/repo", topic="login bug", n=10
-        )
+        with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
+            await cog._run(
+                interaction,
+                repo="owner/repo",
+                topic="login bug",
+                n=10,
+                anchor=anchor,
+            )
 
-        cog.pipeline.transform.run.assert_awaited_once()
-        pipeline_data = cog.pipeline.transform.run.call_args.args[0]
-        assert pipeline_data.input == "login bug"
-        assert pipeline_data.context["messages"] == [
-            "user1: hello",
-            "user2: world",
-        ]
+            mock_run.assert_awaited_once_with(
+                interaction,
+                repo="owner/repo",
+                topic="login bug",
+                messages=["user1: hello", "user2: world"],
+                latest_message_link="https://discord.com/channels/1/2/3",
+                ephemeral=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_run_empty_channel_sends_error(self, cog):
+        interaction = _mock_interaction()
+        interaction.channel = _channel_with_history()  # no messages
+
+        with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
+            await cog._run(interaction, repo="owner/repo", topic="bug", n=5)
+
+            interaction.followup.send.assert_awaited_once()
+            content = interaction.followup.send.call_args.kwargs.get("content", "")
+            assert "internal error" in content.lower()
+            mock_run.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_command_sends_preview(self, mock_fetch, cog):
-        mock_fetch.return_value = self._mock_fetch_result()
-        interaction = self._mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
-
-        loading_msg.edit.assert_awaited_once()
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        embed = edit_kwargs.get("embed")
-        assert embed is not None
-        assert "# Title" in embed.description
-        assert edit_kwargs.get("view") is not None
-
-    @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_no_messages_sends_error(self, mock_fetch, cog):
+    async def test_run_empty_fetch_sends_error(self, mock_fetch, cog):
         mock_fetch.return_value = FetchResult(messages=[], latest_message_link=None)
-        interaction = self._mock_interaction()
+        anchor = _mock_message()
+        interaction = _mock_interaction()
 
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
+        with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
+            await cog._run(
+                interaction, repo="owner/repo", topic="bug", n=5, anchor=anchor
+            )
 
-        interaction.followup.send.assert_awaited_once()
-        call_args = interaction.followup.send.call_args
-        content = (
-            call_args.kwargs.get("content") or call_args.args[0]
-            if call_args.args
-            else call_args.kwargs.get("content", "")
-        )
-        assert "internal error" in content.lower()
-        cog.pipeline.transform.run.assert_not_awaited()
+            interaction.followup.send.assert_awaited_once()
+            mock_run.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_command_sends_preview_with_retry_button(self, mock_fetch, cog):
-        mock_fetch.return_value = self._mock_fetch_result()
-        interaction = self._mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
-
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        view = edit_kwargs["view"]
-        assert any(isinstance(c, RetryButton) for c in view.children)
-
-    @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_transform_error_sends_error_embed(self, mock_fetch, cog):
-        mock_fetch.return_value = self._mock_fetch_result()
-        cog.pipeline.transform.run.side_effect = RuntimeError("Gemini 503")
-
-        interaction = self._mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
-
-        loading_msg.edit.assert_awaited_once()
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        assert "Gemini 503" in edit_kwargs["embed"].description
-        assert isinstance(edit_kwargs["view"], ErrorView)
-        assert any(
-            isinstance(c, RetryButton) for c in edit_kwargs["view"].children
-        )
-
-    @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_fetch_error_sends_error_embed(self, mock_fetch, cog):
+    async def test_run_fetch_error_sends_error_embed(self, mock_fetch, cog):
         mock_fetch.side_effect = RuntimeError("Discord API down")
-        interaction = self._mock_interaction()
+        anchor = _mock_message()
+        interaction = _mock_interaction()
 
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
+        await cog._run(interaction, repo="owner/repo", topic="bug", n=5, anchor=anchor)
 
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
@@ -394,168 +184,53 @@ class TestCreateIssueCog:
         )
 
         # Should not raise
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
-
-
-class TestPreviewView:
-    def test_preview_view_contains_confirm_button(self):
-        view = PreviewView(cmd_type="issue", cache_key="k1")
-        assert any(isinstance(c, ConfirmButton) for c in view.children)
-
-    def test_preview_view_contains_cancel_button(self):
-        view = PreviewView(cmd_type="issue", cache_key="k1")
-        assert any(isinstance(c, CancelButton) for c in view.children)
-
-    def test_preview_view_has_no_timeout(self):
-        view = PreviewView(cmd_type="issue", cache_key="k1")
-        assert view.timeout is None
-
-    def test_preview_view_is_persistent(self):
-        view = PreviewView(cmd_type="issue", cache_key="k1")
-        assert view.is_persistent()
-
-    def test_preview_view_contains_retry_button(self):
-        view = PreviewView(cmd_type="issue", cache_key="abc123")
-        assert any(isinstance(c, RetryButton) for c in view.children)
-
-    def test_loading_view_has_single_disabled_button(self):
-        view = PreviewView(cmd_type="issue", loading=True)
-        assert len(view.children) == 1
-        assert view.children[0].disabled is True
-        assert "Regenerating" in view.children[0].label
-
-    @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_command_sends_preview_with_retry_button(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(
-            messages=["msg"], latest_message_link="https://discord.com/channels/1/2/3"
-        )
-
-        interaction = _mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-
-        await cog._do_create_issue(interaction, repo="owner/repo", topic="bug", n=5)
-
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        view = edit_kwargs["view"]
-        assert any(isinstance(c, RetryButton) for c in view.children)
+        await cog._run(interaction, repo="owner/repo", topic="bug", n=5)
 
 
 class TestCreateIssueModal:
-    def _mock_message(self, *, guild_id=111, channel_id=222, message_id=333):
-        msg = MagicMock()
-        msg.author.display_name = "Alice"
-        msg.content = "something is broken"
-        msg.id = message_id
-        msg.channel.id = channel_id
-        msg.guild.id = guild_id
-        return msg
-
     def test_modal_has_expected_fields(self, cog):
-        msg = self._mock_message()
+        msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         assert hasattr(modal, "repo")
         assert hasattr(modal, "topic")
         assert hasattr(modal, "n")
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_on_submit_defers(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(
-            messages=["Bob: earlier"], latest_message_link=None
-        )
-        msg = self._mock_message()
+    async def test_on_submit_delegates_to_run_with_anchor(self, cog):
+        msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         modal.repo._value = "owner/repo"
         modal.topic._value = "bug report"
-        modal.n._value = "20"
+        modal.n._value = "15"
         interaction = _mock_interaction()
-        await modal.on_submit(interaction)
-        interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+
+        with patch.object(cog, "_run", new_callable=AsyncMock) as mock_run:
+            await modal.on_submit(interaction)
+
+            mock_run.assert_awaited_once_with(
+                interaction,
+                repo="owner/repo",
+                topic="bug report",
+                n=15,
+                anchor=msg,
+            )
 
     @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_on_submit_fetches_messages_anchored_at_target(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(
-            messages=["Bob: earlier"], latest_message_link=None
-        )
-        msg = self._mock_message()
-        modal = CreateIssueModal(msg, cog=cog)
-        modal.repo._value = "owner/repo"
-        modal.topic._value = "bug report"
-        modal.n._value = "20"
-        interaction = _mock_interaction()
-        await modal.on_submit(interaction)
-        mock_fetch.assert_awaited_once_with(msg.channel, limit=19, before=msg)
-
-    @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_on_submit_prepends_target_message(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(
-            messages=["Bob: earlier"], latest_message_link=None
-        )
-        msg = self._mock_message()
-        modal = CreateIssueModal(msg, cog=cog)
-        modal.repo._value = "owner/repo"
-        modal.topic._value = "bug report"
-        modal.n._value = "20"
-        interaction = _mock_interaction()
-        await modal.on_submit(interaction)
-        cog.pipeline.transform.run.assert_awaited_once()
-        pipeline_data = cog.pipeline.transform.run.call_args.args[0]
-        assert pipeline_data.context["messages"][0] == "Alice: something is broken"
-        assert pipeline_data.context["messages"][1] == "Bob: earlier"
-
-    @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_on_submit_builds_message_link(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(messages=[], latest_message_link=None)
-        msg = self._mock_message(guild_id=1, channel_id=2, message_id=3)
+    async def test_on_submit_defaults_n_when_blank(self, cog):
+        msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         modal.repo._value = "owner/repo"
         modal.topic._value = "bug"
-        modal.n._value = "20"
+        modal.n._value = ""
         interaction = _mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-        await modal.on_submit(interaction)
-        from src.cogs.ui import get_cached_pipeline_data
 
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        view = edit_kwargs["view"]
-        confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
-        cached = get_cached_pipeline_data(confirm_btn.cache_key)
-        assert (
-            cached.extra["latest_message_link"]
-            == "https://discord.com/channels/1/2/3"
-        )
-
-    @pytest.mark.asyncio
-    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
-    async def test_on_submit_handles_no_guild(self, mock_fetch, cog):
-        mock_fetch.return_value = FetchResult(messages=[], latest_message_link=None)
-        msg = self._mock_message()
-        msg.guild = None
-        modal = CreateIssueModal(msg, cog=cog)
-        modal.repo._value = "owner/repo"
-        modal.topic._value = "bug"
-        modal.n._value = "20"
-        interaction = _mock_interaction()
-        loading_msg = AsyncMock()
-        interaction.followup.send.return_value = loading_msg
-        await modal.on_submit(interaction)
-        from src.cogs.ui import get_cached_pipeline_data
-
-        edit_kwargs = loading_msg.edit.call_args.kwargs
-        view = edit_kwargs["view"]
-        confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
-        cached = get_cached_pipeline_data(confirm_btn.cache_key)
-        assert cached.extra["latest_message_link"] is None
+        with patch.object(cog, "_run", new_callable=AsyncMock) as mock_run:
+            await modal.on_submit(interaction)
+            assert mock_run.call_args.kwargs["n"] == 20
 
     @pytest.mark.asyncio
     async def test_on_error_sends_ephemeral_error(self, cog):
-        msg = self._mock_message()
+        msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         interaction = _mock_interaction()
         error = RuntimeError("something broke")
@@ -567,7 +242,7 @@ class TestCreateIssueModal:
 
     @pytest.mark.asyncio
     async def test_on_error_defers_if_not_responded(self, cog):
-        msg = self._mock_message()
+        msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         interaction = _mock_interaction()
         interaction.response.is_done = MagicMock(return_value=False)

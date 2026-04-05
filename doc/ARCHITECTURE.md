@@ -17,25 +17,25 @@ Command (parse + present)
 
 ### Command layer
 
-Entry points that receive interactions, parse options, and orchestrate the pipeline. Implemented as discord.py Cogs using `@app_commands.command()` and context menus.
+Thin Discord interaction wrappers. Implemented as discord.py Cogs using `@app_commands.command()` and context menus.
 
 Responsibilities:
-- Register a `CommandHandler` for the UI layer to dispatch button clicks
+- Register the pipeline as the `CommandHandler` for button dispatch
 - Defer long-running interactions (`interaction.response.defer()`)
 - Extract options via app_commands parameter injection (slash commands) or modals (context menus)
-- Build the initial `PipelineData`
-- Wire transforms and outputs together
-- Return any data/messages back to the user
+- Fetch channel messages
+- Hand off to `pipeline.run()` for all orchestration
+- Catch top-level errors and send error embeds
 
-Each command writes its own presentation orchestration (deferring, loading embeds, previews), but delegates business logic to the pipeline layer.
+Cogs contain no business logic -- they defer, fetch messages, and call the pipeline.
 
 Modules: `bot.py` (composition root), `cogs/create_issue.py`, `cogs/engine_issue.py`, `cogs/registry.py`
 
 ### Pipeline layer
 
-Reusable service classes that orchestrate business logic between transforms and outputs. Each pipeline encapsulates the data construction, transform execution, and output calls for a specific workflow — without any Discord imports.
+Service classes that own the full workflow: data construction, repo validation, transform execution, preview display, confirmation handling, and GitHub output. Each pipeline implements the `CommandHandler` protocol so UI buttons dispatch directly to it.
 
-Cogs delegate to pipelines for all non-presentation work. This means the same pipeline can be shared by multiple commands (e.g., `create-issue` and `engine-issue` both use `IssuePipeline`).
+Pipelines are shared across commands -- `create-issue` and `engine-issue` both use the same `IssuePipeline` instance. Cogs register the pipeline as their handler at init.
 
 Modules: `pipeline/create_issue.py`
 

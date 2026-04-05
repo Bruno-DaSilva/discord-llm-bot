@@ -115,25 +115,50 @@ def mock_interaction():
     interaction.response.is_done = MagicMock(return_value=True)
     interaction.channel = MagicMock()
     interaction.client = MagicMock()
-    interaction.client.github = AsyncMock()
-    interaction.client.github.check_repo_installation = AsyncMock()
-    interaction.client.github.create_issue = AsyncMock(
-        return_value="https://github.com/o/r/issues/1"
-    )
     interaction.user = MagicMock()
     interaction.user.display_name = "TestUser"
     return interaction
 
 
 def make_cached(
-    input="topic", messages=None, author="tester", link=None, cmd_type="issue"
+    input="topic",
+    messages=None,
+    author="tester",
+    link=None,
+    cmd_type="issue",
+    owner="test-owner",
+    repo="test-repo",
 ):
     pipeline = PipelineData(input=input, context={"messages": messages or ["msg"]})
     return CachedCommandData(
         cmd_type=cmd_type,
         pipeline_data=pipeline,
-        extra={"author_username": author, "latest_message_link": link},
+        extra={
+            "author_username": author,
+            "latest_message_link": link,
+            "owner": owner,
+            "repo": repo,
+        },
     )
+
+
+def mock_fetch_result(messages=None, link="https://discord.com/channels/1/2/3"):
+    from src.utils.discord import FetchResult
+
+    return FetchResult(
+        messages=messages or ["user1: msg"],
+        latest_message_link=link,
+    )
+
+
+def mock_message(*, guild_id=111, channel_id=222, message_id=333):
+    msg = MagicMock()
+    msg.author.display_name = "Alice"
+    msg.content = "something is broken"
+    msg.id = message_id
+    msg.channel.id = channel_id
+    msg.guild.id = guild_id
+    return msg
 
 
 # ---------------------------------------------------------------------------

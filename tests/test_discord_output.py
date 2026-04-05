@@ -187,17 +187,40 @@ class TestFetchMessagesWithMetadata:
         assert result.latest_message_link is None
 
     @pytest.mark.asyncio
-    async def test_before_anchor_is_passed_to_history(self):
-        msg = self._make_msg("Alice", "hi", msg_id=999)
-        anchor = MagicMock()
+    async def test_anchor_prepends_formatted_target_and_uses_its_link(self):
+        anchor = self._make_msg(
+            "Alice", "broken", msg_id=999, guild_id=111, channel_id=222
+        )
+        earlier = self._make_msg("Bob", "earlier", msg_id=900)
         channel = MagicMock()
-        received_kwargs = {}
+        received = {}
 
         async def mock_history(limit, **kwargs):
-            received_kwargs.update(kwargs)
-            yield msg
+            received["limit"] = limit
+            received.update(kwargs)
+            yield earlier
 
         channel.history = mock_history
 
-        await fetch_messages_with_metadata(channel, limit=5, before=anchor)
-        assert received_kwargs.get("before") is anchor
+        result = await fetch_messages_with_metadata(channel, limit=5, anchor=anchor)
+
+        assert received["limit"] == 4
+        assert received.get("before") is anchor
+        assert result.messages == ["Bob: earlier", "Alice: broken"]
+        assert result.latest_message_link == "https://discord.com/channels/111/222/999"
+
+    @pytest.mark.asyncio
+    async def test_anchor_with_no_guild_returns_none_link(self):
+        anchor = self._make_msg("Alice", "hi", msg_id=999)
+        anchor.guild = None
+        channel = MagicMock()
+
+        async def mock_history(limit, **kwargs):
+            return
+            yield
+
+        channel.history = mock_history
+
+        result = await fetch_messages_with_metadata(channel, limit=3, anchor=anchor)
+        assert result.messages == ["Alice: hi"]
+        assert result.latest_message_link is None

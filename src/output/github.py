@@ -22,7 +22,10 @@ async def check_repo_installation(
     repo: str,
     app_jwt: str,
 ) -> None:
-    """Verify the GitHub App is installed on owner/repo. Raises RepoNotInstalled if not."""
+    """Verify the GitHub App is installed on owner/repo. 
+    We need this or else the bot can create issues on any public repo. 
+    This ensures repo owners have control over which repos the bot can 
+    access via installs."""
     response = await client.get(
         f"https://api.github.com/repos/{owner}/{repo}/installation",
         headers={

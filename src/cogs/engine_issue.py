@@ -6,10 +6,9 @@ from discord import app_commands
 from discord.errors import NotFound
 from discord.ext import commands
 
-from src.cogs.create_issue import run_pipeline
-from src.utils.discord import fetch_messages_with_metadata, resolve_mentions
-from src.pipeline.create_issue import IssuePipeline
 from src.cogs.ui import build_error_embed
+from src.pipeline.create_issue import IssuePipeline
+from src.utils.discord import fetch_messages_with_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +28,17 @@ class EngineIssueCog(commands.Cog):
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command(self.ctx_menu.name, type=self.ctx_menu.type)
 
+    # ------------------------------------------------------------------
+    #  engine-issue context menu entrypoint. See EngineIssueModal class below.
+    # ------------------------------------------------------------------
     async def engine_issue_context_menu(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
         await interaction.response.send_modal(EngineIssueModal(message, cog=self))
 
+    # ------------------------------------------------------------------
+    #  /engine-issue slash command entrypoint
+    # ------------------------------------------------------------------
     @app_commands.command(
         name="engine-issue",
         description="Generate a GitHub issue for RecoilEngine from recent channel messages",
@@ -48,17 +53,27 @@ class EngineIssueCog(commands.Cog):
         topic: str,
         n: int = 20,
     ) -> None:
-        await self._do_engine_issue(interaction, topic=topic, n=n)
+        await self._run(interaction, topic=topic, n=n)
 
-    async def _do_engine_issue(
+    # ------------------------------------------------------------------
+    #  Shared run logic for both entrypoints
+    # ------------------------------------------------------------------
+    async def _run(
         self,
         interaction: discord.Interaction,
+        *,
         topic: str,
-        n: int = 20,
+        n: int,
+        anchor: discord.Message | None = None,
     ) -> None:
-        """Defer the interaction, fetch channel messages, and run the pipeline for the hardcoded engine repo."""
+        """Defer, resolve an anchor message, fetch context around it, and hand off to the pipeline."""
         t0 = time.monotonic()
-        logger.info("engine-issue invoked: topic=%r n=%d", topic, n)
+        logger.info(
+            "engine-issue invoked: topic=%r n=%d anchor=%s",
+            topic,
+            n,
+            "supplied" if anchor is not None else "latest",
+        )
 
         try:
             await interaction.response.defer(ephemeral=True)
@@ -68,23 +83,39 @@ class EngineIssueCog(commands.Cog):
             return
 
         try:
+            if anchor is None:
+                async for latest in interaction.channel.history(limit=1):
+                    anchor = latest
+                    break
+                if anchor is None:
+                    logger.error(
+                        "No messages retrieved from channel %s", interaction.channel
+                    )
+                    await interaction.followup.send(
+                        content="Internal error: no messages could be retrieved.",
+                        ephemeral=True,
+                    )
+                    return
+
             fetch_result = await fetch_messages_with_metadata(
-                interaction.channel, limit=n
+                anchor.channel, limit=n, anchor=anchor
+            )
+            logger.debug(
+                "Fetched %d messages (%.0fms)",
+                len(fetch_result.messages),
+                (time.monotonic() - t0) * 1000,
             )
 
             if not fetch_result.messages:
-                logger.error(
-                    "No messages retrieved from channel %s", interaction.channel
-                )
+                logger.error("No messages retrieved around anchor %s", anchor.id)
                 await interaction.followup.send(
                     content="Internal error: no messages could be retrieved.",
                     ephemeral=True,
                 )
                 return
 
-            await run_pipeline(
+            await self.pipeline.run(
                 interaction,
-                pipeline=self.pipeline,
                 repo=REPO,
                 topic=topic,
                 messages=fetch_result.messages,
@@ -100,6 +131,9 @@ class EngineIssueCog(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
 
+# ------------------------------------------------------------------
+# Used just in the context menu flow
+# ------------------------------------------------------------------
 class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
     topic = discord.ui.TextInput(
         label="Topic",
@@ -129,56 +163,10 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        """Fetch messages anchored before the target, prepend the target, and run the pipeline."""
-        t0 = time.monotonic()
-        await interaction.response.defer(ephemeral=True)
-
         n = int(self.n.value or "20")
-        logger.info("engine-issue modal submitted: topic=%r n=%d", self.topic.value, n)
-
-        try:
-            resolved_content = resolve_mentions(
-                self.target_message.content,
-                self.target_message.mentions,
-                self.target_message.role_mentions,
-                self.target_message.channel_mentions,
-            )
-            target_formatted = (
-                f"{self.target_message.author.display_name}: {resolved_content}"
-            )
-
-            logger.debug("Fetching %d messages before target", n - 1)
-            fetch_result = await fetch_messages_with_metadata(
-                self.target_message.channel, limit=n - 1, before=self.target_message
-            )
-            messages = [target_formatted] + fetch_result.messages
-            logger.debug(
-                "Fetched %d messages (%.0fms)",
-                len(messages),
-                (time.monotonic() - t0) * 1000,
-            )
-            logger.debug("Messages: \n%r\n===", messages)
-
-            guild = self.target_message.guild
-            if guild is not None:
-                link = f"https://discord.com/channels/{guild.id}/{self.target_message.channel.id}/{self.target_message.id}"
-            else:
-                link = None
-
-            await run_pipeline(
-                interaction,
-                pipeline=self.cog.pipeline,
-                repo=REPO,
-                topic=self.topic.value,
-                messages=messages,
-                latest_message_link=link,
-                ephemeral=True,
-            )
-            logger.info(
-                "engine-issue modal complete (%.0fms)",
-                (time.monotonic() - t0) * 1000,
-            )
-        except Exception as exc:
-            logger.exception("engine-issue modal failed")
-            embed = build_error_embed(exc)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await self.cog._run(
+            interaction,
+            topic=self.topic.value,
+            n=n,
+            anchor=self.target_message,
+        )

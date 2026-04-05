@@ -47,22 +47,38 @@ def format_message(msg: discord.Message) -> str:
     return "\n".join(parts)
 
 
+def _message_link(msg: discord.Message) -> str | None:
+    if msg.guild is None:
+        return None
+    return f"https://discord.com/channels/{msg.guild.id}/{msg.channel.id}/{msg.id}"
+
+
 async def fetch_messages_with_metadata(
-    channel: discord.abc.Messageable, limit: int, before: discord.Message | None = None
+    channel: discord.abc.Messageable,
+    limit: int,
+    anchor: discord.Message | None = None,
 ) -> FetchResult:
-    """Fetch up to *limit* messages from the channel, return them in chronological order with a link to the latest."""
+    """Fetch up to *limit* messages from the channel, return them in chronological order with a link to the latest.
+
+    When *anchor* is provided, fetch *limit - 1* messages strictly before it and
+    append the formatted anchor at the end; the returned link points to the anchor.
+    """
+    if anchor is not None:
+        messages = [
+            format_message(m)
+            async for m in channel.history(limit=limit - 1, before=anchor)
+        ]
+        messages.reverse()
+        messages.append(format_message(anchor))
+        return FetchResult(messages=messages, latest_message_link=_message_link(anchor))
+
     messages = []
     latest_message_link = None
     first = True
-    kwargs = {"limit": limit}
-    if before is not None:
-        kwargs["before"] = before
-    async for msg in channel.history(**kwargs):
+    async for msg in channel.history(limit=limit):
         messages.append(format_message(msg))
         if first:
-            latest_message_link = (
-                f"https://discord.com/channels/{msg.guild.id}/{msg.channel.id}/{msg.id}"
-            )
+            latest_message_link = _message_link(msg)
             first = False
     messages.reverse()
     return FetchResult(messages=messages, latest_message_link=latest_message_link)
