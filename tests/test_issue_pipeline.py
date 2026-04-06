@@ -369,7 +369,7 @@ class TestRunWithTarget:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
             target=target,
@@ -392,7 +392,7 @@ class TestRunWithTarget:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
             target=target,
@@ -416,7 +416,7 @@ class TestRunWithTarget:
         await mock_pipeline.run(
             interaction,
             repo="acme/widgets",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
             target=target,
@@ -436,7 +436,7 @@ class TestRunWithTarget:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
             target=target,
@@ -457,7 +457,7 @@ class TestRunWithTarget:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
             target=None,
@@ -479,7 +479,7 @@ class TestRunWithTarget:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
             target=None,
