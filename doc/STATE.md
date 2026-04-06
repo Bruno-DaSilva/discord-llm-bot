@@ -2,7 +2,7 @@
 
 ## Why state is needed
 
-Retry and confirm buttons need data from the original command (e.g., `PipelineData` with channel messages + topic, or the extracted title/body for a GitHub retry). Discord creates a **new `Interaction` object** for every button click -- there is no built-in way to carry data from the original command interaction to the button interaction.
+Retry and confirm buttons need data from the original command (e.g., `PipelineData` with channel messages + focus, or the extracted title/body for a GitHub retry). Discord creates a **new `Interaction` object** for every button click -- there is no built-in way to carry data from the original command interaction to the button interaction.
 
 ## Options considered
 

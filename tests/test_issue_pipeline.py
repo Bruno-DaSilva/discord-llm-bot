@@ -42,20 +42,20 @@ def mock_pipeline():
 
 
 class TestBuildPipelineData:
-    def test_sets_topic_and_messages(self, pipeline):
+    def test_sets_focus_and_messages(self, pipeline):
         data = pipeline.build_pipeline_data("login bug", ["u1: hi", "u2: bye"])
         assert data.input == "login bug"
         assert data.context["messages"] == ["u1: hi", "u2: bye"]
 
     def test_empty_messages(self, pipeline):
-        data = pipeline.build_pipeline_data("topic", [])
-        assert data.input == "topic"
+        data = pipeline.build_pipeline_data("focus", [])
+        assert data.input == "focus"
         assert data.context["messages"] == []
 
 
 class TestBuildCachedData:
     def test_sets_all_fields(self, pipeline):
-        pd = PipelineData(input="topic", context={"messages": ["msg"]})
+        pd = PipelineData(input="focus", context={"messages": ["msg"]})
         cached = pipeline.build_cached_data(
             pd,
             author_username="alice",
@@ -107,7 +107,7 @@ class TestBuildIssueBody:
 class TestGenerate:
     @pytest.mark.asyncio
     async def test_delegates_to_transform(self, pipeline):
-        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        data = PipelineData(input="focus", context={"messages": ["msg"]})
         result = await pipeline.generate(data)
         assert isinstance(result, PipelineData)
         assert result.input == "# Title\nBody"
@@ -118,7 +118,7 @@ class TestGenerate:
         pipeline = IssuePipeline(
             transform=FailingTransform(), github=FakeGitHubClient()
         )
-        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        data = PipelineData(input="focus", context={"messages": ["msg"]})
         with pytest.raises(RuntimeError, match="transform failed"):
             await pipeline.generate(data)
 
@@ -168,7 +168,7 @@ class TestRun:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="login bug",
+            focus="login bug",
             messages=["user1: hello", "user2: world"],
             latest_message_link="https://discord.com/channels/1/2/3",
         )
@@ -186,7 +186,7 @@ class TestRun:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
         )
@@ -205,7 +205,7 @@ class TestRun:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
         )
@@ -224,7 +224,7 @@ class TestRun:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
         )
@@ -242,7 +242,7 @@ class TestRun:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link="https://discord.com/channels/1/2/3",
         )
@@ -262,7 +262,7 @@ class TestRun:
         await mock_pipeline.run(
             interaction,
             repo="acme/widgets",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
         )
@@ -279,7 +279,7 @@ class TestRun:
         await mock_pipeline.run(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             messages=["user1: msg"],
             latest_message_link=None,
         )

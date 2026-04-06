@@ -48,17 +48,17 @@ class CreateIssueCog(commands.Cog):
     )
     @app_commands.describe(
         repo="GitHub repo (owner/repo)",
-        topic="Topic or summary for the issue",
+        focus="Focus or summary for the issue",
         n="Number of messages to fetch (default 20)",
     )
     async def create_issue_command(
         self,
         interaction: discord.Interaction,
         repo: str,
-        topic: str,
+        focus: str,
         n: int = 20,
     ) -> None:
-        await self._run(interaction, repo=repo, topic=topic, n=n)
+        await self._run(interaction, repo=repo, focus=focus, n=n)
 
     # ------------------------------------------------------------------
     #  Shared run logic for both entrypoints
@@ -68,7 +68,7 @@ class CreateIssueCog(commands.Cog):
         interaction: discord.Interaction,
         *,
         repo: str,
-        topic: str,
+        focus: str,
         n: int,
         anchor: discord.Message | None = None,
         target: ResponseTarget | None = None,
@@ -76,9 +76,9 @@ class CreateIssueCog(commands.Cog):
         """Defer, resolve an anchor message, fetch context around it, and hand off to the pipeline."""
         t0 = time.monotonic()
         logger.info(
-            "create-issue invoked: repo=%s topic=%r n=%d anchor=%s",
+            "create-issue invoked: repo=%s focus=%r n=%d anchor=%s",
             repo,
-            topic,
+            focus,
             n,
             "supplied" if anchor is not None else "latest",
         )
@@ -125,7 +125,7 @@ class CreateIssueCog(commands.Cog):
             await self.pipeline.run(
                 interaction,
                 repo=repo,
-                topic=topic,
+                focus=focus,
                 messages=fetch_result.messages,
                 latest_message_link=fetch_result.latest_message_link,
                 ephemeral=True,
@@ -149,8 +149,8 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
         style=discord.TextStyle.short,
         required=True,
     )
-    topic = discord.ui.TextInput(
-        label="Topic",
+    focus = discord.ui.TextInput(
+        label="Focus",
         placeholder="Brief summary of the issue",
         style=discord.TextStyle.short,
         required=True,
@@ -181,7 +181,7 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
         await self.cog._run(
             interaction,
             repo=self.repo.value,
-            topic=self.topic.value,
+            focus=self.focus.value,
             n=n,
             anchor=self.target_message,
             target=DmResponseTarget(interaction.user, interaction.channel_id),

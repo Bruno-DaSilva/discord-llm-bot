@@ -47,10 +47,10 @@ class TestEngineIssueCogCommand:
         await cog.engine_issue_command.callback(
             cog,
             interaction,
-            topic="bug",
+            focus="bug",
             n=10,
         )
-        mock_run.assert_awaited_once_with(interaction, topic="bug", n=10)
+        mock_run.assert_awaited_once_with(interaction, focus="bug", n=10)
 
     def test_hardcoded_repo(self):
         assert REPO == "beyond-all-reason/recoilengine"
@@ -66,7 +66,7 @@ class TestEngineIssueCog:
         mock_fetch.return_value = _mock_fetch_result()
         anchor = _mock_message()
         interaction = _mock_interaction()
-        await cog._run(interaction, topic="bug", n=5, anchor=anchor)
+        await cog._run(interaction, focus="bug", n=5, anchor=anchor)
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)
 
     @pytest.mark.asyncio
@@ -79,7 +79,7 @@ class TestEngineIssueCog:
         interaction = _mock_interaction()
         interaction.channel = _channel_with_history(latest)
 
-        await cog._run(interaction, topic="bug", n=5)
+        await cog._run(interaction, focus="bug", n=5)
 
         mock_fetch.assert_awaited_once()
         call_kwargs = mock_fetch.call_args.kwargs
@@ -93,7 +93,7 @@ class TestEngineIssueCog:
         anchor = _mock_message()
         interaction = _mock_interaction()
 
-        await cog._run(interaction, topic="bug", n=7, anchor=anchor)
+        await cog._run(interaction, focus="bug", n=7, anchor=anchor)
 
         call_kwargs = mock_fetch.call_args.kwargs
         assert call_kwargs["limit"] == 7
@@ -110,12 +110,12 @@ class TestEngineIssueCog:
         interaction = _mock_interaction()
 
         with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
-            await cog._run(interaction, topic="bug", n=5, anchor=anchor)
+            await cog._run(interaction, focus="bug", n=5, anchor=anchor)
 
             mock_run.assert_awaited_once_with(
                 interaction,
                 repo=REPO,
-                topic="bug",
+                focus="bug",
                 messages=["user1: msg"],
                 latest_message_link="https://discord.com/channels/1/2/3",
                 ephemeral=True,
@@ -128,7 +128,7 @@ class TestEngineIssueCog:
         interaction.channel = _channel_with_history()  # no messages
 
         with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
-            await cog._run(interaction, topic="bug", n=5)
+            await cog._run(interaction, focus="bug", n=5)
 
             interaction.followup.send.assert_awaited_once()
             content = interaction.followup.send.call_args.kwargs.get("content", "")
@@ -143,7 +143,7 @@ class TestEngineIssueCog:
         interaction = _mock_interaction()
 
         with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
-            await cog._run(interaction, topic="bug", n=5, anchor=anchor)
+            await cog._run(interaction, focus="bug", n=5, anchor=anchor)
 
             interaction.followup.send.assert_awaited_once()
             mock_run.assert_not_awaited()
@@ -154,7 +154,7 @@ class TestEngineIssueCog:
         mock_fetch.side_effect = RuntimeError("Discord API down")
         anchor = _mock_message()
         interaction = _mock_interaction()
-        await cog._run(interaction, topic="bug", n=5, anchor=anchor)
+        await cog._run(interaction, focus="bug", n=5, anchor=anchor)
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
         assert "RuntimeError" in call_kwargs["embed"].description
@@ -169,21 +169,21 @@ class TestEngineIssueCog:
         )
 
         # Should not raise
-        await cog._run(interaction, topic="bug", n=5)
+        await cog._run(interaction, focus="bug", n=5)
 
 
 class TestEngineIssueModal:
     def test_modal_has_expected_fields(self, cog):
         msg = _mock_message()
         modal = EngineIssueModal(msg, cog=cog)
-        assert hasattr(modal, "topic")
+        assert hasattr(modal, "focus")
         assert hasattr(modal, "n")
 
     @pytest.mark.asyncio
     async def test_on_submit_delegates_to_run_with_anchor_and_dm_target(self, cog):
         msg = _mock_message()
         modal = EngineIssueModal(msg, cog=cog)
-        modal.topic._value = "bug report"
+        modal.focus._value = "bug report"
         modal.n._value = "15"
         interaction = _mock_interaction()
 
@@ -192,7 +192,7 @@ class TestEngineIssueModal:
 
             mock_run.assert_awaited_once()
             call_kwargs = mock_run.call_args.kwargs
-            assert call_kwargs["topic"] == "bug report"
+            assert call_kwargs["focus"] == "bug report"
             assert call_kwargs["n"] == 15
             assert call_kwargs["anchor"] is msg
             target = call_kwargs["target"]
@@ -203,7 +203,7 @@ class TestEngineIssueModal:
     async def test_on_submit_defaults_n_when_blank(self, cog):
         msg = _mock_message()
         modal = EngineIssueModal(msg, cog=cog)
-        modal.topic._value = "bug"
+        modal.focus._value = "bug"
         modal.n._value = ""
         interaction = _mock_interaction()
 

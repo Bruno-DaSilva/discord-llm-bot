@@ -123,7 +123,7 @@ def mock_interaction():
 
 
 def make_cached(
-    input="topic",
+    input="focus",
     messages=None,
     author="tester",
     link=None,

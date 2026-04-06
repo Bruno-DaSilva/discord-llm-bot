@@ -5,7 +5,7 @@
 LLM-powered Discord bot that generates GitHub issues from channel conversations. Entry points:
 
 - **Slash commands**: `/create-issue` (any repo) and `/engine-issue` (hardcoded to RecoilEngine)
-- **Context menus**: right-click a message → "Create Issue" or "Engine Issue" → modal for topic/options
+- **Context menus**: right-click a message → "Create Issue" or "Engine Issue" → modal for focus/options
 
 Flow: fetch recent channel messages → LLM transform (Gemini) → preview embed with Confirm/Cancel/Retry buttons → create GitHub issue on confirm. Users can retry the LLM generation or the GitHub API call independently if either fails.
 
