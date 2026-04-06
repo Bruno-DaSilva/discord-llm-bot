@@ -64,3 +64,13 @@ class TestLoadPromptAmendments:
         path = tmp_yaml("owner/repo:\n  - 123\n")
         with pytest.raises(ValueError, match="string"):
             load_extra_context(path)
+
+    def test_keys_normalized_to_lowercase(self, tmp_yaml):
+        path = tmp_yaml('Owner/Repo:\n  - "ctx"\n')
+        result = load_extra_context(path)
+        assert "owner/repo" in result
+
+    def test_keys_stripped_of_trailing_slashes(self, tmp_yaml):
+        path = tmp_yaml('owner/repo/:\n  - "ctx"\n')
+        result = load_extra_context(path)
+        assert "owner/repo" in result

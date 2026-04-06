@@ -88,6 +88,22 @@ class TestPromptAmendmentsLookup:
         data = p.build_pipeline_data("topic", ["msg"], amendments=amendments.get("owner/repo"))
         assert "amendments" not in data.context
 
+    def test_lookup_is_case_insensitive(self):
+        p = IssuePipeline(
+            transform=FakeTransform(),
+            github=FakeGitHubClient(),
+            extra_context={"owner/repo": ["Be concise"]},
+        )
+        assert p.extra_context.get("owner/repo") == ["Be concise"]
+
+    def test_lookup_ignores_trailing_slash(self):
+        p = IssuePipeline(
+            transform=FakeTransform(),
+            github=FakeGitHubClient(),
+            extra_context={"owner/repo": ["Be concise"]},
+        )
+        assert p.extra_context.get("owner/repo") == ["Be concise"]
+
 
 class TestBuildCachedData:
     def test_sets_all_fields(self, pipeline):

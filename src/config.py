@@ -2,6 +2,8 @@ from pathlib import Path
 
 import yaml
 
+from src.utils.repo import normalize_repo
+
 
 def load_extra_context(path: Path) -> dict[str, list[str]]:
     """Load per-repo extra context from a YAML file.
@@ -30,4 +32,4 @@ def load_extra_context(path: Path) -> dict[str, list[str]]:
                     f"extra context: item {i} in '{key}' must be a string, got {type(item).__name__}"
                 )
 
-    return raw
+    return {normalize_repo(key): value for key, value in raw.items()}

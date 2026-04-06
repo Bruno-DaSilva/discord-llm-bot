@@ -7,6 +7,7 @@ from src.output.github import RepoNotInstalled, append_footer
 from src.output.github_client import GitHubClient
 from src.transform.transform import Transform
 from src.cogs.response import ResponseTarget
+from src.utils.repo import normalize_repo
 from src.cogs.ui import (
     DeleteView,
     ErrorView,
@@ -121,7 +122,7 @@ class IssuePipeline:
         if target is None:
             target = ResponseTarget()
 
-        amendments = self.extra_context.get(repo, [])
+        amendments = self.extra_context.get(normalize_repo(repo), [])
         data = self.build_pipeline_data(focus, messages, amendments=amendments)
 
         owner, repo_name = repo.split("/", 1)
