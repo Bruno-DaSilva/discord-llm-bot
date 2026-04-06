@@ -52,6 +52,42 @@ class TestBuildPipelineData:
         assert data.input == "focus"
         assert data.context["messages"] == []
 
+    def test_with_amendments(self, pipeline):
+        data = pipeline.build_pipeline_data(
+            "topic", ["msg"], amendments=["Focus on internals"]
+        )
+        assert data.context["amendments"] == ["Focus on internals"]
+
+    def test_without_amendments(self, pipeline):
+        data = pipeline.build_pipeline_data("topic", ["msg"])
+        assert "amendments" not in data.context
+
+    def test_empty_amendments_not_stored(self, pipeline):
+        data = pipeline.build_pipeline_data("topic", ["msg"], amendments=[])
+        assert "amendments" not in data.context
+
+
+class TestPromptAmendmentsLookup:
+    def test_run_passes_matching_amendments(self):
+        amendments = {"owner/repo": ["Be concise"]}
+        p = IssuePipeline(
+            transform=FakeTransform(),
+            github=FakeGitHubClient(),
+            extra_context=amendments,
+        )
+        data = p.build_pipeline_data("topic", ["msg"], amendments=amendments.get("owner/repo"))
+        assert data.context["amendments"] == ["Be concise"]
+
+    def test_run_no_matching_repo(self):
+        amendments = {"owner/other": ["Be concise"]}
+        p = IssuePipeline(
+            transform=FakeTransform(),
+            github=FakeGitHubClient(),
+            extra_context=amendments,
+        )
+        data = p.build_pipeline_data("topic", ["msg"], amendments=amendments.get("owner/repo"))
+        assert "amendments" not in data.context
+
 
 class TestBuildCachedData:
     def test_sets_all_fields(self, pipeline):

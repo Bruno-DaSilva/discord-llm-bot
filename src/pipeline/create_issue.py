@@ -29,16 +29,30 @@ class IssuePipeline:
 
     CMD_TYPE = "issue"
 
-    def __init__(self, transform: Transform, github: GitHubClient) -> None:
+    def __init__(
+        self,
+        transform: Transform,
+        github: GitHubClient,
+        extra_context: dict[str, list[str]] | None = None,
+    ) -> None:
         self.transform = transform
         self.github = github
+        self.extra_context = extra_context or {}
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
-    def build_pipeline_data(self, focus: str, messages: list[str]) -> PipelineData:
-        return PipelineData(input=focus, context={"messages": messages})
+    def build_pipeline_data(
+        self,
+        focus: str,
+        messages: list[str],
+        amendments: list[str] = (),
+    ) -> PipelineData:
+        context: dict[str, list[str]] = {"messages": messages}
+        if amendments:
+            context["amendments"] = amendments
+        return PipelineData(input=focus, context=context)
 
     def build_cached_data(
         self,
@@ -107,7 +121,8 @@ class IssuePipeline:
         if target is None:
             target = ResponseTarget()
 
-        data = self.build_pipeline_data(focus, messages)
+        amendments = self.extra_context.get(repo, [])
+        data = self.build_pipeline_data(focus, messages, amendments=amendments)
 
         owner, repo_name = repo.split("/", 1)
 

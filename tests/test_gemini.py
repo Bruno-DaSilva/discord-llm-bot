@@ -80,6 +80,27 @@ class TestIssueGeneratorTransform:
         data = PipelineData(input="focus", context={"messages": ["msg"]})
         assert transform.build_user_prompt(data) == ""
 
+    def test_build_system_prompt_without_amendments(self):
+        transform = IssueGeneratorTransform(client=MagicMock())
+        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        prompt = transform.build_system_prompt(data)
+        assert "topic" in prompt
+        assert "msg" in prompt
+        assert "<extra_instructions>" not in prompt
+
+    def test_build_system_prompt_with_amendments(self):
+        transform = IssueGeneratorTransform(client=MagicMock())
+        data = PipelineData(
+            input="topic",
+            context={
+                "messages": ["msg"],
+                "amendments": ["Focus on engine internals"],
+            },
+        )
+        prompt = transform.build_system_prompt(data)
+        assert "<extra_instructions>" in prompt
+        assert "- Focus on engine internals" in prompt
+
     @pytest.mark.asyncio
     async def test_full_round_trip(self):
         mock_response = MagicMock()

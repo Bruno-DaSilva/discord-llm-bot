@@ -36,8 +36,9 @@ class IssueGeneratorTransform(GeminiTransform):
     max_output_tokens = 8096
 
     def build_system_prompt(self, data: PipelineData) -> str:
-        messages_text = _flatten_context_messages(data)
-        return render_issue_prompt(data.input, messages_text)
+        messages_text = "\n".join(data.context.get("messages", []))
+        amendments = data.context.get("amendments", [])
+        return render_issue_prompt(data.input, messages_text, amendments=amendments)
 
     def build_user_prompt(self, data: PipelineData) -> str:
         return ""
