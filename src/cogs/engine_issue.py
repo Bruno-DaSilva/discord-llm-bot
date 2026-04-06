@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.errors import NotFound
 from discord.ext import commands
 
+from src.cogs.response import DmResponseTarget, ResponseTarget
 from src.cogs.ui import build_error_embed
 from src.pipeline.create_issue import IssuePipeline
 from src.utils.discord import fetch_messages_with_metadata
@@ -65,6 +66,7 @@ class EngineIssueCog(commands.Cog):
         topic: str,
         n: int,
         anchor: discord.Message | None = None,
+        target: ResponseTarget | None = None,
     ) -> None:
         """Defer, resolve an anchor message, fetch context around it, and hand off to the pipeline."""
         t0 = time.monotonic()
@@ -121,6 +123,7 @@ class EngineIssueCog(commands.Cog):
                 messages=fetch_result.messages,
                 latest_message_link=fetch_result.latest_message_link,
                 ephemeral=True,
+                target=target,
             )
             logger.info(
                 "engine-issue complete (%.0fms)", (time.monotonic() - t0) * 1000
@@ -169,4 +172,5 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
             topic=self.topic.value,
             n=n,
             anchor=self.target_message,
+            target=DmResponseTarget(interaction.user, interaction.channel_id),
         )

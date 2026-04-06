@@ -4,6 +4,7 @@ import discord
 import pytest
 
 from src.cogs.engine_issue import EngineIssueCog, EngineIssueModal, REPO
+from src.cogs.response import DmResponseTarget
 from src.utils.discord import FetchResult
 from src.pipeline.create_issue import IssuePipeline
 
@@ -118,6 +119,7 @@ class TestEngineIssueCog:
                 messages=["user1: msg"],
                 latest_message_link="https://discord.com/channels/1/2/3",
                 ephemeral=True,
+                target=None,
             )
 
     @pytest.mark.asyncio
@@ -178,7 +180,7 @@ class TestEngineIssueModal:
         assert hasattr(modal, "n")
 
     @pytest.mark.asyncio
-    async def test_on_submit_delegates_to_run_with_anchor(self, cog):
+    async def test_on_submit_delegates_to_run_with_anchor_and_dm_target(self, cog):
         msg = _mock_message()
         modal = EngineIssueModal(msg, cog=cog)
         modal.topic._value = "bug report"
@@ -188,12 +190,14 @@ class TestEngineIssueModal:
         with patch.object(cog, "_run", new_callable=AsyncMock) as mock_run:
             await modal.on_submit(interaction)
 
-            mock_run.assert_awaited_once_with(
-                interaction,
-                topic="bug report",
-                n=15,
-                anchor=msg,
-            )
+            mock_run.assert_awaited_once()
+            call_kwargs = mock_run.call_args.kwargs
+            assert call_kwargs["topic"] == "bug report"
+            assert call_kwargs["n"] == 15
+            assert call_kwargs["anchor"] is msg
+            target = call_kwargs["target"]
+            assert isinstance(target, DmResponseTarget)
+            assert target.channel_id == interaction.channel_id
 
     @pytest.mark.asyncio
     async def test_on_submit_defaults_n_when_blank(self, cog):

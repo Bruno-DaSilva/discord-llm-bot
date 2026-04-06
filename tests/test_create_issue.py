@@ -5,6 +5,7 @@ import discord
 import pytest
 
 from src.cogs.create_issue import CreateIssueCog, CreateIssueModal
+from src.cogs.response import DmResponseTarget
 from src.utils.discord import FetchResult
 from src.pipeline.create_issue import IssuePipeline
 
@@ -131,7 +132,28 @@ class TestCreateIssueCog:
                 messages=["user1: hello", "user2: world"],
                 latest_message_link="https://discord.com/channels/1/2/3",
                 ephemeral=True,
+                target=None,
             )
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
+    async def test_run_passes_target_to_pipeline(self, mock_fetch, cog):
+        mock_fetch.return_value = _mock_fetch_result()
+        anchor = _mock_message()
+        interaction = _mock_interaction()
+        target = MagicMock()
+
+        with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
+            await cog._run(
+                interaction,
+                repo="owner/repo",
+                topic="bug",
+                n=5,
+                anchor=anchor,
+                target=target,
+            )
+
+            assert mock_run.call_args.kwargs["target"] is target
 
     @pytest.mark.asyncio
     async def test_run_empty_channel_sends_error(self, cog):
@@ -196,7 +218,7 @@ class TestCreateIssueModal:
         assert hasattr(modal, "n")
 
     @pytest.mark.asyncio
-    async def test_on_submit_delegates_to_run_with_anchor(self, cog):
+    async def test_on_submit_delegates_to_run_with_anchor_and_dm_target(self, cog):
         msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         modal.repo._value = "owner/repo"
@@ -207,13 +229,15 @@ class TestCreateIssueModal:
         with patch.object(cog, "_run", new_callable=AsyncMock) as mock_run:
             await modal.on_submit(interaction)
 
-            mock_run.assert_awaited_once_with(
-                interaction,
-                repo="owner/repo",
-                topic="bug report",
-                n=15,
-                anchor=msg,
-            )
+            mock_run.assert_awaited_once()
+            call_kwargs = mock_run.call_args.kwargs
+            assert call_kwargs["repo"] == "owner/repo"
+            assert call_kwargs["topic"] == "bug report"
+            assert call_kwargs["n"] == 15
+            assert call_kwargs["anchor"] is msg
+            target = call_kwargs["target"]
+            assert isinstance(target, DmResponseTarget)
+            assert target.channel_id == interaction.channel_id
 
     @pytest.mark.asyncio
     async def test_on_submit_defaults_n_when_blank(self, cog):
