@@ -58,10 +58,11 @@
             image: "{{ container_image }}"
             volumes:
               - "/home/{{ bot_name }}/.config/{{ bot_name }}/github_app_key.pem:/run/secrets/github_app_key.pem:ro"
+            env_files: 
+              - "/home/{{ bot_name }}/.config/{{ bot_name }}/env"
             quadlet_options:
               - "AutoUpdate=registry"
               - "Pull=newer"
-              - "EnvironmentFile=/home/{{ bot_name }}/.config/{{ bot_name }}/env"
               - |
                 [Install]
                 WantedBy=default.target
