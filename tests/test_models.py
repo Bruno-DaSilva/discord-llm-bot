@@ -3,7 +3,7 @@ from src.models import CachedCommandData, CachedOutputData, PipelineData
 
 class TestCachedCommandData:
     def test_construct_with_pipeline_and_extra(self):
-        pipeline = PipelineData(input="topic", context={"messages": ["msg"]})
+        pipeline = PipelineData(input="focus", context={"messages": ["msg"]})
         cached = CachedCommandData(
             cmd_type="issue",
             pipeline_data=pipeline,
@@ -14,7 +14,7 @@ class TestCachedCommandData:
         assert cached.extra["author_username"] == "alice"
 
     def test_extra_defaults_to_empty_dict(self):
-        pipeline = PipelineData(input="topic")
+        pipeline = PipelineData(input="focus")
         cached = CachedCommandData(cmd_type="test", pipeline_data=pipeline)
         assert cached.extra == {}
 
@@ -37,13 +37,13 @@ class TestPipelineData:
     def test_construct_with_context_and_input(self):
         data = PipelineData(
             context={"messages": ["hello", "world"]},
-            input="test topic",
+            input="test focus",
         )
         assert data.context == {"messages": ["hello", "world"]}
-        assert data.input == "test topic"
+        assert data.input == "test focus"
 
     def test_context_defaults_to_empty_dict(self):
-        data = PipelineData(input="topic")
+        data = PipelineData(input="focus")
         assert data.context == {}
 
     def test_equality(self):

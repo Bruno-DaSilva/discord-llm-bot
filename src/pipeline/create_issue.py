@@ -36,8 +36,8 @@ class IssuePipeline:
     # Helpers
     # ------------------------------------------------------------------
 
-    def build_pipeline_data(self, topic: str, messages: list[str]) -> PipelineData:
-        return PipelineData(input=topic, context={"messages": messages})
+    def build_pipeline_data(self, focus: str, messages: list[str]) -> PipelineData:
+        return PipelineData(input=focus, context={"messages": messages})
 
     def build_cached_data(
         self,
@@ -96,13 +96,13 @@ class IssuePipeline:
         interaction: discord.Interaction,
         *,
         repo: str,
-        topic: str,
+        focus: str,
         messages: list[str],
         latest_message_link: str | None,
         ephemeral: bool = False,
     ) -> None:
         """Check repo installation, run the LLM transform, and display a preview with confirm/retry/cancel buttons."""
-        data = self.build_pipeline_data(topic, messages)
+        data = self.build_pipeline_data(focus, messages)
 
         owner, repo_name = repo.split("/", 1)
 

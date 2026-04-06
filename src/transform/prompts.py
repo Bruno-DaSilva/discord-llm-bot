@@ -2,7 +2,7 @@ ISSUE_GENERATOR_PROMPT = """
 <instructions>
 You are to take the contextual information provided to create a ticket title and description for our jira-like ticketing system.
 
-Focus on the topic provided in `ticket_topic`.
+Focus on the focus provided in `ticket_focus`.
 
 the `thread_contextual_messages` block is provided with all the messages in the thread for extra context.
 
@@ -47,9 +47,9 @@ Key risk areas include: nondeterministic ordering when userdata is used as a tab
 </example>
 
 
-<ticket_topic>
-{{ context.ticket_topic }}
-</ticket_topic>
+<ticket_focus>
+{{ context.ticket_focus }}
+</ticket_focus>
 
 <thread_contextual_messages>
 {{ context.messages }}
@@ -57,7 +57,7 @@ Key risk areas include: nondeterministic ordering when userdata is used as a tab
         """
 
 
-def render_issue_prompt(topic: str, messages: str) -> str:
-    return ISSUE_GENERATOR_PROMPT.replace("{{ context.ticket_topic }}", topic).replace(
+def render_issue_prompt(focus: str, messages: str) -> str:
+    return ISSUE_GENERATOR_PROMPT.replace("{{ context.ticket_focus }}", focus).replace(
         "{{ context.messages }}", messages
     )

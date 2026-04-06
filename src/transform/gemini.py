@@ -36,7 +36,7 @@ class GeminiTransform:
 
     def build_user_prompt(self, data: PipelineData) -> str:
         messages_text = _flatten_context_messages(data)
-        return f"Topic: {data.input}\n\nChannel messages:\n{messages_text}"
+        return f"Focus: {data.input}\n\nChannel messages:\n{messages_text}"
 
     async def run(self, data: PipelineData) -> PipelineData:
         """Call the Gemini API and return new PipelineData with the response stored under the 'generated' context key."""

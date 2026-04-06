@@ -44,16 +44,16 @@ class EngineIssueCog(commands.Cog):
         description="Generate a GitHub issue for RecoilEngine from recent channel messages",
     )
     @app_commands.describe(
-        topic="Topic or summary for the issue",
+        focus="Focus or summary for the issue",
         n="Number of messages to fetch (default 20)",
     )
     async def engine_issue_command(
         self,
         interaction: discord.Interaction,
-        topic: str,
+        focus: str,
         n: int = 20,
     ) -> None:
-        await self._run(interaction, topic=topic, n=n)
+        await self._run(interaction, focus=focus, n=n)
 
     # ------------------------------------------------------------------
     #  Shared run logic for both entrypoints
@@ -62,15 +62,15 @@ class EngineIssueCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         *,
-        topic: str,
+        focus: str,
         n: int,
         anchor: discord.Message | None = None,
     ) -> None:
         """Defer, resolve an anchor message, fetch context around it, and hand off to the pipeline."""
         t0 = time.monotonic()
         logger.info(
-            "engine-issue invoked: topic=%r n=%d anchor=%s",
-            topic,
+            "engine-issue invoked: focus=%r n=%d anchor=%s",
+            focus,
             n,
             "supplied" if anchor is not None else "latest",
         )
@@ -117,7 +117,7 @@ class EngineIssueCog(commands.Cog):
             await self.pipeline.run(
                 interaction,
                 repo=REPO,
-                topic=topic,
+                focus=focus,
                 messages=fetch_result.messages,
                 latest_message_link=fetch_result.latest_message_link,
                 ephemeral=True,
@@ -135,8 +135,8 @@ class EngineIssueCog(commands.Cog):
 # Used just in the context menu flow
 # ------------------------------------------------------------------
 class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
-    topic = discord.ui.TextInput(
-        label="Topic",
+    focus = discord.ui.TextInput(
+        label="Focus",
         placeholder="Brief summary of the issue",
         style=discord.TextStyle.short,
         required=True,
@@ -166,7 +166,7 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
         n = int(self.n.value or "20")
         await self.cog._run(
             interaction,
-            topic=self.topic.value,
+            focus=self.focus.value,
             n=n,
             anchor=self.target_message,
         )
