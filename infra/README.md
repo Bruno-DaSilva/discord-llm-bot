@@ -13,7 +13,7 @@ following variables — the playbook will refuse to render without them:
 - `github_app_id`
 - `github_app_installation_id`
 - `github_app_private_key` — full PEM contents of the GitHub App private key (multiline)
-
+TODO(p2004a): setup vault in-repo
 ## Run
 
 ```bash
