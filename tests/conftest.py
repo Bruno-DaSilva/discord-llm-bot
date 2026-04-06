@@ -113,8 +113,10 @@ def mock_interaction():
     interaction = AsyncMock()
     interaction.response = AsyncMock()
     interaction.response.is_done = MagicMock(return_value=True)
-    interaction.channel = MagicMock()
+    interaction.channel = AsyncMock()
+    interaction.channel_id = 12345
     interaction.client = MagicMock()
+    interaction.client.get_channel = MagicMock(return_value=AsyncMock())
     interaction.user = MagicMock()
     interaction.user.display_name = "TestUser"
     return interaction
@@ -128,17 +130,21 @@ def make_cached(
     cmd_type="issue",
     owner="test-owner",
     repo="test-repo",
+    channel_id=None,
 ):
     pipeline = PipelineData(input=input, context={"messages": messages or ["msg"]})
+    extra = {
+        "author_username": author,
+        "latest_message_link": link,
+        "owner": owner,
+        "repo": repo,
+    }
+    if channel_id is not None:
+        extra["channel_id"] = channel_id
     return CachedCommandData(
         cmd_type=cmd_type,
         pipeline_data=pipeline,
-        extra={
-            "author_username": author,
-            "latest_message_link": link,
-            "owner": owner,
-            "repo": repo,
-        },
+        extra=extra,
     )
 
 
