@@ -24,3 +24,6 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "prompt_eval: tests that call a real LLM API (requires GEMINI_API_KEY)",
+]
