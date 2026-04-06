@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
+from src.cogs.response import ResponseTarget
 from src.pipeline.create_issue import IssuePipeline
 from src.models import PipelineData
 from src.output.github import RepoNotInstalled
@@ -349,6 +350,266 @@ class TestOnRetry:
         view = interaction.edit_original_response.call_args.kwargs["view"]
         retry_btn = [c for c in view.children if isinstance(c, RetryButton)][0]
         assert retry_btn.retry_key != original_key
+
+
+# ------------------------------------------------------------------
+# DM flow in pipeline.run()
+# ------------------------------------------------------------------
+
+
+class TestRunWithTarget:
+    @pytest.mark.asyncio
+    async def test_target_send_preview_called_on_success(self, mock_pipeline):
+        interaction = _mock_interaction()
+        target = AsyncMock(spec=ResponseTarget)
+        target.channel_id = 99999
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
+        await mock_pipeline.run(
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+            target=target,
+        )
+        target.send_preview.assert_awaited_once()
+        call_args = target.send_preview.call_args
+        assert call_args.args[0] is loading_msg
+        assert isinstance(call_args.args[1], discord.Embed)
+        assert isinstance(call_args.args[2], PreviewView)
+
+    @pytest.mark.asyncio
+    async def test_target_send_error_called_on_transform_failure(self, mock_pipeline):
+        mock_pipeline.transform.run.side_effect = RuntimeError("Gemini 503")
+        interaction = _mock_interaction()
+        target = AsyncMock(spec=ResponseTarget)
+        target.channel_id = None
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
+        await mock_pipeline.run(
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+            target=target,
+        )
+        target.send_error.assert_awaited_once()
+        call_args = target.send_error.call_args
+        assert "Gemini 503" in call_args.args[1].description
+        assert isinstance(call_args.args[2], ErrorView)
+
+    @pytest.mark.asyncio
+    async def test_target_send_error_called_on_repo_not_installed(self, mock_pipeline):
+        mock_pipeline.github.check_repo_installation = AsyncMock(
+            side_effect=RepoNotInstalled("acme", "widgets")
+        )
+        interaction = _mock_interaction()
+        target = AsyncMock(spec=ResponseTarget)
+        target.channel_id = None
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
+        await mock_pipeline.run(
+            interaction,
+            repo="acme/widgets",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+            target=target,
+        )
+        target.send_error.assert_awaited_once()
+        embed = target.send_error.call_args.args[1]
+        assert "not installed" in embed.description.lower()
+
+    @pytest.mark.asyncio
+    async def test_target_channel_id_stored_in_cached_extra(self, mock_pipeline):
+        interaction = _mock_interaction()
+        target = AsyncMock(spec=ResponseTarget)
+        target.channel_id = 99999
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
+        await mock_pipeline.run(
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+            target=target,
+        )
+        from src.cogs.ui import get_cached_pipeline_data, ConfirmButton
+
+        view = target.send_preview.call_args.args[2]
+        confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
+        cached = get_cached_pipeline_data(confirm_btn.cache_key)
+        assert cached.extra["channel_id"] == 99999
+
+    @pytest.mark.asyncio
+    async def test_no_channel_id_in_extra_when_target_is_none(self, mock_pipeline):
+        interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
+        await mock_pipeline.run(
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+            target=None,
+        )
+        from src.cogs.ui import get_cached_pipeline_data, ConfirmButton
+
+        view = loading_msg.edit.call_args.kwargs["view"]
+        confirm_btn = [c for c in view.children if isinstance(c, ConfirmButton)][0]
+        cached = get_cached_pipeline_data(confirm_btn.cache_key)
+        assert "channel_id" not in cached.extra
+
+    @pytest.mark.asyncio
+    async def test_default_target_edits_loading_msg(self, mock_pipeline):
+        """When target is None, preview goes to the loading message (existing behavior)."""
+        interaction = _mock_interaction()
+        loading_msg = AsyncMock()
+        interaction.followup.send.return_value = loading_msg
+
+        await mock_pipeline.run(
+            interaction,
+            repo="owner/repo",
+            topic="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+            target=None,
+        )
+        loading_msg.edit.assert_awaited_once()
+        edit_kwargs = loading_msg.edit.call_args.kwargs
+        assert "# Title" in edit_kwargs["embed"].description
+
+
+# ------------------------------------------------------------------
+# on_confirm / on_output_retry channel_id routing
+# ------------------------------------------------------------------
+
+
+class TestOnConfirmChannelRouting:
+    @pytest.mark.asyncio
+    async def test_posts_to_original_channel_via_channel_id(self):
+        pipeline = IssuePipeline(transform=FakeTransform(), github=FakeGitHubClient())
+        cached = make_cached(channel_id=55555)
+        interaction = _mock_interaction()
+        interaction.message = AsyncMock()
+        interaction.message.embeds = [
+            discord.Embed(description="# Title\nBody text")
+        ]
+
+        await pipeline.on_confirm(interaction, cached)
+
+        interaction.client.get_channel.assert_called_once_with(55555)
+        channel = interaction.client.get_channel.return_value
+        channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_interaction_channel_when_no_channel_id(self):
+        pipeline = IssuePipeline(transform=FakeTransform(), github=FakeGitHubClient())
+        cached = make_cached(channel_id=None)
+        interaction = _mock_interaction()
+        interaction.message = AsyncMock()
+        interaction.message.embeds = [
+            discord.Embed(description="# Title\nBody text")
+        ]
+
+        await pipeline.on_confirm(interaction, cached)
+
+        interaction.client.get_channel.assert_not_called()
+        interaction.channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_github_error_propagates_channel_id_in_payload(self):
+        github = FakeGitHubClient()
+        github.create_issue = _raise_runtime
+        pipeline = IssuePipeline(transform=FakeTransform(), github=github)
+        cached = make_cached(channel_id=55555)
+        interaction = _mock_interaction()
+        interaction.message = AsyncMock()
+        interaction.message.embeds = [
+            discord.Embed(description="# Title\nBody text")
+        ]
+
+        await pipeline.on_confirm(interaction, cached)
+
+        from src.cogs.ui import get_cached_pipeline_data, OutputErrorView
+
+        view = interaction.response.edit_message.call_args.kwargs["view"]
+        assert isinstance(view, OutputErrorView)
+        retry_btn = view.children[0]
+        new_cached = get_cached_pipeline_data(retry_btn.retry_key)
+        assert new_cached.payload["channel_id"] == 55555
+
+
+class TestOnOutputRetryChannelRouting:
+    @pytest.mark.asyncio
+    async def test_posts_to_original_channel_via_channel_id(self):
+        from src.models import CachedOutputData
+
+        pipeline = IssuePipeline(transform=FakeTransform(), github=FakeGitHubClient())
+        cached = CachedOutputData(
+            cmd_type="issue",
+            payload={
+                "title": "T", "body": "B", "owner": "o", "repo": "r",
+                "channel_id": 55555,
+            },
+        )
+        interaction = _mock_interaction()
+
+        await pipeline.on_output_retry(interaction, cached)
+
+        interaction.client.get_channel.assert_called_once_with(55555)
+        channel = interaction.client.get_channel.return_value
+        channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_interaction_channel_when_no_channel_id(self):
+        from src.models import CachedOutputData
+
+        pipeline = IssuePipeline(transform=FakeTransform(), github=FakeGitHubClient())
+        cached = CachedOutputData(
+            cmd_type="issue",
+            payload={"title": "T", "body": "B", "owner": "o", "repo": "r"},
+        )
+        interaction = _mock_interaction()
+
+        await pipeline.on_output_retry(interaction, cached)
+
+        interaction.client.get_channel.assert_not_called()
+        interaction.channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_failure_propagates_channel_id_in_payload(self):
+        from src.models import CachedOutputData
+
+        github = FakeGitHubClient()
+        github.create_issue = _raise_runtime
+        pipeline = IssuePipeline(transform=FakeTransform(), github=github)
+        cached = CachedOutputData(
+            cmd_type="issue",
+            payload={
+                "title": "T", "body": "B", "owner": "o", "repo": "r",
+                "channel_id": 55555,
+            },
+        )
+        interaction = _mock_interaction()
+
+        await pipeline.on_output_retry(interaction, cached)
+
+        from src.cogs.ui import get_cached_pipeline_data
+
+        view = interaction.response.edit_message.call_args.kwargs["view"]
+        retry_btn = view.children[0]
+        new_cached = get_cached_pipeline_data(retry_btn.retry_key)
+        assert new_cached.payload["channel_id"] == 55555
 
 
 # ------------------------------------------------------------------

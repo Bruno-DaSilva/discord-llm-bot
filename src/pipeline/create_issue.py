@@ -6,6 +6,7 @@ from src.models import CachedCommandData, CachedOutputData, PipelineData
 from src.output.github import RepoNotInstalled, append_footer
 from src.output.github_client import GitHubClient
 from src.transform.transform import Transform
+from src.cogs.response import ResponseTarget
 from src.cogs.ui import (
     DeleteView,
     ErrorView,
@@ -100,8 +101,12 @@ class IssuePipeline:
         messages: list[str],
         latest_message_link: str | None,
         ephemeral: bool = False,
+        target: ResponseTarget | None = None,
     ) -> None:
         """Check repo installation, run the LLM transform, and display a preview with confirm/retry/cancel buttons."""
+        if target is None:
+            target = ResponseTarget()
+
         data = self.build_pipeline_data(topic, messages)
 
         owner, repo_name = repo.split("/", 1)
@@ -125,7 +130,7 @@ class IssuePipeline:
                 ),
                 color=discord.Color.red(),
             )
-            await loading_msg.edit(embed=embed)
+            await target.send_error(loading_msg, embed)
             return
 
         cached = self.build_cached_data(
@@ -135,6 +140,8 @@ class IssuePipeline:
             owner=owner,
             repo=repo_name,
         )
+        if target.channel_id is not None:
+            cached.extra["channel_id"] = target.channel_id
         retry_key = cache_pipeline_data(cached)
 
         try:
@@ -143,7 +150,7 @@ class IssuePipeline:
             logger.exception("Transform failed")
             embed = build_error_embed(exc)
             view = ErrorView(cmd_type=self.CMD_TYPE, retry_key=retry_key)
-            await loading_msg.edit(embed=embed, view=view)
+            await target.send_error(loading_msg, embed, view)
             return
 
         view = PreviewView(
@@ -153,7 +160,7 @@ class IssuePipeline:
         )
 
         embed = discord.Embed(description=result.input)
-        await loading_msg.edit(embed=embed, view=view)
+        await target.send_preview(loading_msg, embed, view)
 
     # ------------------------------------------------------------------
     # CommandHandler protocol (dispatched by UI buttons)
@@ -176,18 +183,23 @@ class IssuePipeline:
         owner = cached.extra["owner"]
         repo = cached.extra["repo"]
 
+        channel_id = cached.extra.get("channel_id")
+
         try:
             url = await self.create_issue(owner, repo, title, body)
         except Exception as exc:
             logger.exception("Failed to create issue on GitHub")
+            payload = {
+                "title": title,
+                "body": body,
+                "owner": owner,
+                "repo": repo,
+            }
+            if channel_id is not None:
+                payload["channel_id"] = channel_id
             github_data = CachedOutputData(
                 cmd_type=self.CMD_TYPE,
-                payload={
-                    "title": title,
-                    "body": body,
-                    "owner": owner,
-                    "repo": repo,
-                },
+                payload=payload,
             )
             new_key = cache_pipeline_data(github_data)
             embed = build_error_embed(exc)
@@ -198,7 +210,12 @@ class IssuePipeline:
         await interaction.response.edit_message(
             content=f"Issue created: {url}", view=None
         )
-        await interaction.channel.send(
+        channel = (
+            interaction.client.get_channel(channel_id)
+            if channel_id
+            else interaction.channel
+        )
+        await channel.send(
             content=f"Issue created: {url}", view=DeleteView()
         )
 
@@ -237,11 +254,17 @@ class IssuePipeline:
         owner = cached.payload["owner"]
         repo = cached.payload["repo"]
 
+        channel_id = cached.payload.get("channel_id")
+
         try:
             url = await self.create_issue(owner, repo, title, body)
         except Exception as exc:
             logger.exception("GitHub retry failed")
-            new_key = cache_pipeline_data(cached)
+            retry_data = CachedOutputData(
+                cmd_type=self.CMD_TYPE,
+                payload=cached.payload,
+            )
+            new_key = cache_pipeline_data(retry_data)
             embed = build_error_embed(exc)
             view = OutputErrorView(cmd_type=self.CMD_TYPE, retry_key=new_key)
             await interaction.response.edit_message(embed=embed, view=view)
@@ -250,6 +273,11 @@ class IssuePipeline:
         await interaction.response.edit_message(
             content=f"Issue created: {url}", embed=None, view=None
         )
-        await interaction.channel.send(
+        channel = (
+            interaction.client.get_channel(channel_id)
+            if channel_id
+            else interaction.channel
+        )
+        await channel.send(
             content=f"Issue created: {url}", view=DeleteView()
         )
