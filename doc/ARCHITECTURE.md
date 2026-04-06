@@ -67,7 +67,7 @@ class PipelineData:
 ```
 
 - **context** -- accumulated context strings keyed by type (e.g., channel messages, prior transform results).
-- **input** -- the current focal input (e.g., topic, generated issue body)
+- **input** -- the current focal input (e.g., focus, generated issue body)
 
 This standard interface is what makes transforms composable. The command layer builds the initial `PipelineData`, pipes it through one or more transforms, then extracts the final result to pass domain-specific arguments to each output.
 

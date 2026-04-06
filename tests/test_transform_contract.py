@@ -38,13 +38,13 @@ def transform(request):
 class TestTransformContract:
     @pytest.mark.asyncio
     async def test_run_returns_pipeline_data(self, transform):
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
+        data = PipelineData(input="focus", context={"messages": ["msg1"]})
         result = await transform.run(data)
         assert isinstance(result, PipelineData)
 
     @pytest.mark.asyncio
     async def test_run_sets_generated_context(self, transform):
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
+        data = PipelineData(input="focus", context={"messages": ["msg1"]})
         result = await transform.run(data)
         assert "generated" in result.context
         assert isinstance(result.context["generated"], list)
@@ -52,13 +52,13 @@ class TestTransformContract:
 
     @pytest.mark.asyncio
     async def test_run_sets_non_empty_input(self, transform):
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
+        data = PipelineData(input="focus", context={"messages": ["msg1"]})
         result = await transform.run(data)
         assert isinstance(result.input, str)
         assert len(result.input) > 0
 
     @pytest.mark.asyncio
     async def test_run_preserves_existing_context(self, transform):
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
+        data = PipelineData(input="focus", context={"messages": ["msg1"]})
         result = await transform.run(data)
         assert result.context["messages"] == ["msg1"]

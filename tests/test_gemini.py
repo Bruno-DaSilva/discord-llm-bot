@@ -34,7 +34,7 @@ class TestGeminiTransform:
     async def test_run_raises_on_api_error(self):
         transform, mock_client = self._make_transform()
         mock_client.aio.models.generate_content.side_effect = RuntimeError("API down")
-        data = PipelineData(input="topic", context={"messages": ["msg1"]})
+        data = PipelineData(input="focus", context={"messages": ["msg1"]})
         with pytest.raises(RuntimeError, match="API down"):
             await transform.run(data)
 
@@ -52,7 +52,7 @@ class TestGeminiTransform:
 
     def test_build_system_prompt_returns_class_attribute(self):
         transform, _ = self._make_transform(system_prompt="Static prompt")
-        data = PipelineData(input="topic", context={})
+        data = PipelineData(input="focus", context={})
         assert transform.build_system_prompt(data) == "Static prompt"
 
 
@@ -65,7 +65,7 @@ class TestIssueGeneratorTransform:
 
     def test_build_user_prompt_returns_empty(self):
         transform = IssueGeneratorTransform(client=MagicMock())
-        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        data = PipelineData(input="focus", context={"messages": ["msg"]})
         assert transform.build_user_prompt(data) == ""
 
     @pytest.mark.asyncio

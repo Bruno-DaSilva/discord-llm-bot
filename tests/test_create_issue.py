@@ -49,13 +49,13 @@ class TestCreateIssueCogCommand:
             cog,
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             n=10,
         )
         mock_run.assert_awaited_once_with(
             interaction,
             repo="owner/repo",
-            topic="bug",
+            focus="bug",
             n=10,
         )
 
@@ -71,7 +71,7 @@ class TestCreateIssueCog:
         anchor = _mock_message()
         interaction = _mock_interaction()
 
-        await cog._run(interaction, repo="owner/repo", topic="bug", n=5, anchor=anchor)
+        await cog._run(interaction, repo="owner/repo", focus="bug", n=5, anchor=anchor)
 
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)
 
@@ -85,7 +85,7 @@ class TestCreateIssueCog:
         interaction = _mock_interaction()
         interaction.channel = _channel_with_history(latest)
 
-        await cog._run(interaction, repo="owner/repo", topic="bug", n=5)
+        await cog._run(interaction, repo="owner/repo", focus="bug", n=5)
 
         mock_fetch.assert_awaited_once()
         call_kwargs = mock_fetch.call_args.kwargs
@@ -99,7 +99,7 @@ class TestCreateIssueCog:
         anchor = _mock_message()
         interaction = _mock_interaction()
 
-        await cog._run(interaction, repo="owner/repo", topic="bug", n=7, anchor=anchor)
+        await cog._run(interaction, repo="owner/repo", focus="bug", n=7, anchor=anchor)
 
         mock_fetch.assert_awaited_once()
         call_kwargs = mock_fetch.call_args.kwargs
@@ -120,7 +120,7 @@ class TestCreateIssueCog:
             await cog._run(
                 interaction,
                 repo="owner/repo",
-                topic="login bug",
+                focus="login bug",
                 n=10,
                 anchor=anchor,
             )
@@ -128,7 +128,7 @@ class TestCreateIssueCog:
             mock_run.assert_awaited_once_with(
                 interaction,
                 repo="owner/repo",
-                topic="login bug",
+                focus="login bug",
                 messages=["user1: hello", "user2: world"],
                 latest_message_link="https://discord.com/channels/1/2/3",
                 ephemeral=True,
@@ -147,7 +147,7 @@ class TestCreateIssueCog:
             await cog._run(
                 interaction,
                 repo="owner/repo",
-                topic="bug",
+                focus="bug",
                 n=5,
                 anchor=anchor,
                 target=target,
@@ -161,7 +161,7 @@ class TestCreateIssueCog:
         interaction.channel = _channel_with_history()  # no messages
 
         with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
-            await cog._run(interaction, repo="owner/repo", topic="bug", n=5)
+            await cog._run(interaction, repo="owner/repo", focus="bug", n=5)
 
             interaction.followup.send.assert_awaited_once()
             content = interaction.followup.send.call_args.kwargs.get("content", "")
@@ -177,7 +177,7 @@ class TestCreateIssueCog:
 
         with patch.object(cog.pipeline, "run", new_callable=AsyncMock) as mock_run:
             await cog._run(
-                interaction, repo="owner/repo", topic="bug", n=5, anchor=anchor
+                interaction, repo="owner/repo", focus="bug", n=5, anchor=anchor
             )
 
             interaction.followup.send.assert_awaited_once()
@@ -190,7 +190,7 @@ class TestCreateIssueCog:
         anchor = _mock_message()
         interaction = _mock_interaction()
 
-        await cog._run(interaction, repo="owner/repo", topic="bug", n=5, anchor=anchor)
+        await cog._run(interaction, repo="owner/repo", focus="bug", n=5, anchor=anchor)
 
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
@@ -206,7 +206,7 @@ class TestCreateIssueCog:
         )
 
         # Should not raise
-        await cog._run(interaction, repo="owner/repo", topic="bug", n=5)
+        await cog._run(interaction, repo="owner/repo", focus="bug", n=5)
 
 
 class TestCreateIssueModal:
@@ -214,7 +214,7 @@ class TestCreateIssueModal:
         msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         assert hasattr(modal, "repo")
-        assert hasattr(modal, "topic")
+        assert hasattr(modal, "focus")
         assert hasattr(modal, "n")
 
     @pytest.mark.asyncio
@@ -222,7 +222,7 @@ class TestCreateIssueModal:
         msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         modal.repo._value = "owner/repo"
-        modal.topic._value = "bug report"
+        modal.focus._value = "bug report"
         modal.n._value = "15"
         interaction = _mock_interaction()
 
@@ -232,7 +232,7 @@ class TestCreateIssueModal:
             mock_run.assert_awaited_once()
             call_kwargs = mock_run.call_args.kwargs
             assert call_kwargs["repo"] == "owner/repo"
-            assert call_kwargs["topic"] == "bug report"
+            assert call_kwargs["focus"] == "bug report"
             assert call_kwargs["n"] == 15
             assert call_kwargs["anchor"] is msg
             target = call_kwargs["target"]
@@ -244,7 +244,7 @@ class TestCreateIssueModal:
         msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         modal.repo._value = "owner/repo"
-        modal.topic._value = "bug"
+        modal.focus._value = "bug"
         modal.n._value = ""
         interaction = _mock_interaction()
 
