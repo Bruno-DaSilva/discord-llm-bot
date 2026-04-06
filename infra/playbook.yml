@@ -1,0 +1,103 @@
+- name: Setup {{ bot_name }} Service
+  hosts: all
+  become: true
+  vars:
+    bot_name: discord-bot
+    container_image: ghcr.io/beyond-all-reason/discord-llm-bot:latest
+    github_actions_ssh_key: ""
+  tasks:
+    - name: Install Podman
+      ansible.builtin.package:
+        name: podman
+        state: present
+
+    - name: Create {{ bot_name }} user
+      ansible.builtin.user:
+        name: "{{ bot_name }}"
+        shell: /bin/bash
+        create_home: true
+
+    - name: Enable lingering for {{ bot_name }} user
+      ansible.builtin.command:
+        cmd: "loginctl enable-linger {{ bot_name }}"
+        creates: "/var/lib/systemd/linger/{{ bot_name }}"
+
+    - name: Set up {{ bot_name }}
+      become: true
+      become_user: "{{ bot_name }}"
+      block:
+        - name: Create directory structure for {{ bot_name }} user
+          ansible.builtin.file:
+            path: "/home/{{ bot_name }}/{{ item }}"
+            state: directory
+            mode: "0755"
+          loop:
+            - .config/{{ bot_name }}
+            - .local/bin
+
+        - name: Create {{ bot_name }} environment configuration
+          ansible.builtin.template:
+            src: files/bot_env.j2
+            dest: "/home/{{ bot_name }}/.config/{{ bot_name }}/env"
+            mode: "0600"
+          no_log: true
+          register: env
+
+        - name: Deploy GitHub App private key
+          ansible.builtin.copy:
+            content: "{{ github_app_private_key }}"
+            dest: "/home/{{ bot_name }}/.config/{{ bot_name }}/github_app_key.pem"
+            mode: "0600"
+          no_log: true
+          register: gh_key
+
+        - name: Set up container
+          containers.podman.podman_container:
+            name: "{{ bot_name }}"
+            state: quadlet
+            image: "{{ container_image }}"
+            volumes:
+              - "/home/{{ bot_name }}/.config/{{ bot_name }}/github_app_key.pem:/run/secrets/github_app_key.pem:ro"
+            env_files: 
+              - "/home/{{ bot_name }}/.config/{{ bot_name }}/env"
+            quadlet_options:
+              - "AutoUpdate=registry"
+              - "Pull=newer"
+              - |
+                [Install]
+                WantedBy=default.target
+          register: container
+
+        - name: Start and enable {{ bot_name }} service
+          ansible.builtin.systemd_service:
+            name: "{{ bot_name }}.service"
+            scope: user
+            enabled: true
+            state: "{{ (env.changed or gh_key.changed or container.changed) | ternary('restarted', 'started') }}"
+            daemon_reload: true
+
+        - name: Start and enable podman auto-update
+          ansible.builtin.systemd_service:
+            name: podman-auto-update.timer
+            scope: user
+            enabled: true
+            state: started
+
+        - name: Install github-actions-commands.sh
+          ansible.builtin.template:
+            src: files/github-actions-commands.sh.j2
+            dest: "/home/{{ bot_name }}/.local/bin/github-actions-commands"
+            mode: "0755"
+
+        - name: Create .ssh directory for {{ bot_name }} user
+          ansible.builtin.file:
+            path: "/home/{{ bot_name }}/.ssh"
+            state: directory
+            mode: "0700"
+
+        - name: Set up ssh command for github actions
+          ansible.builtin.copy:
+            dest: "/home/{{ bot_name }}/.ssh/authorized_keys"
+            mode: "0600"
+            content: |
+              restrict,command="~/.local/bin/github-actions-commands \"$SSH_ORIGINAL_COMMAND\"" {{ github_actions_ssh_key }}

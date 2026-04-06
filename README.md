@@ -19,8 +19,7 @@ Discord bot that generates GitHub issues from channel messages using Gemini AI. 
 ## Setup
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+uv sync
 cp example.env .env   # fill in your secrets
 ```
 
@@ -28,19 +27,29 @@ cp example.env .env   # fill in your secrets
 
 ```bash
 # Local
-.venv/bin/python bot.py
+uv run python -m src.bot
 
 # Docker
 docker build -t discord-issue-bot .
-docker run --env-file .env discord-issue-bot
+docker run --env-file .env \
+  -v "$GITHUB_APP_PRIVATE_KEY_PATH:/run/secrets/github_app_key.pem:ro" \
+  -e GITHUB_APP_PRIVATE_KEY_PATH=/run/secrets/github_app_key.pem \
+  discord-issue-bot
 ```
 
 ## Test
 
 ```bash
-.venv/bin/python -m pytest
-.venv/bin/python -m pytest --cov=src
+uv run pytest
+uv run pytest --cov=src
 ```
+
+## Deployment
+
+Automated via GitHub Actions (`.github/workflows/deploy.yml`) — builds the image
+on push to `main`, pushes to `ghcr.io`, and triggers `podman-auto-update` on the
+configured host over SSH. See `infra/README.md` for the Ansible playbook that
+provisions the target VM.
 
 ## Architecture
 
