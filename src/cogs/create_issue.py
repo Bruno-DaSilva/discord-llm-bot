@@ -11,6 +11,7 @@ from src.cogs.response import DmResponseTarget, ResponseTarget
 from src.cogs.ui import build_error_embed
 from src.pipeline.create_issue import IssuePipeline
 from src.utils.discord import fetch_messages_with_metadata
+from src.utils.tracing import propagate_trace_to_modal, traced_modal_submit
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,9 @@ class CreateIssueCog(commands.Cog):
     def __init__(self, bot: commands.Bot, pipeline: IssuePipeline) -> None:
         self.bot = bot
         self.pipeline = pipeline
-        
+
         register_handler(IssuePipeline.CMD_TYPE, pipeline)
-        
+
         self.ctx_menu = app_commands.ContextMenu(
             name="Create Issue",
             callback=self.create_issue_context_menu,
@@ -37,7 +38,9 @@ class CreateIssueCog(commands.Cog):
     async def create_issue_context_menu(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
-        await interaction.response.send_modal(CreateIssueModal(message, cog=self))
+        modal = CreateIssueModal(message, cog=self)
+        propagate_trace_to_modal(modal, interaction, "create-issue")
+        await interaction.response.send_modal(modal)
 
     # ------------------------------------------------------------------
     #  /create-issue slash command entrypoint
@@ -176,6 +179,7 @@ class CreateIssueModal(discord.ui.Modal, title="Create Issue"):
         embed = build_error_embed(error)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+    @traced_modal_submit
     async def on_submit(self, interaction: discord.Interaction) -> None:
         n = int(self.n.value or "20")
         await self.cog._run(

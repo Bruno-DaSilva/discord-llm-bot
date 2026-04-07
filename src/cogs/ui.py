@@ -1,12 +1,12 @@
 import logging
 import re
 import time
-import uuid
 from typing import Self
 
 import discord
 
 from src.models import CachedCommandData, CachedOutputData
+from src.utils.tracing import traced_callback
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,12 @@ def _evict_expired() -> None:
 
 
 def cache_pipeline_data(data: CachedCommandData | CachedOutputData) -> str:
-    """Evict stale entries, store data under a random 8-char key, and return the key."""
+    """Evict stale entries, store data under the current trace ID, and return the key."""
+    from src.utils.tracing import generate_cache_key, get_trace_headers
+
     _evict_expired()
-    key = uuid.uuid4().hex[:8]
+    key = generate_cache_key()
+    data.trace_headers = get_trace_headers() or None
     _retry_cache[key] = (time.monotonic(), data)
     return key
 
@@ -102,6 +105,7 @@ class ConfirmButton(
     ) -> Self:
         return cls(cmd_type=match["cmd_type"], cache_key=match["key"])
 
+    @traced_callback
     async def callback(self, interaction: discord.Interaction) -> None:
         """Look up cached data and dispatch to the registered handler's on_confirm."""
         logger.info("Confirm button pressed: cmd_type=%s", self.cmd_type)
@@ -151,6 +155,7 @@ class RetryButton(
     ) -> Self:
         return cls(cmd_type=match["cmd_type"], retry_key=match["key"])
 
+    @traced_callback
     async def callback(self, interaction: discord.Interaction) -> None:
         """Look up cached CachedCommandData and dispatch to the registered handler's on_retry."""
         data = get_cached_pipeline_data(self.retry_key)
@@ -229,6 +234,7 @@ class OutputRetryButton(
     ) -> Self:
         return cls(cmd_type=match["cmd_type"], retry_key=match["key"])
 
+    @traced_callback
     async def callback(self, interaction: discord.Interaction) -> None:
         """Look up cached CachedOutputData and dispatch to the registered handler's on_output_retry."""
         cached = get_cached_pipeline_data(self.retry_key)

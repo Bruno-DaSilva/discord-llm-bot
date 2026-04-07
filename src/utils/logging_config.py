@@ -43,6 +43,9 @@ def setup_logging() -> None:
                 "httpcore": {
                     "level": "INFO",
                 },
+                "urllib3": {
+                    "level": "INFO",
+                },
             },
             "root": {
                 "handlers": ["console"],

@@ -103,6 +103,18 @@ Interactive components for the preview → confirm/retry/cancel flow. Defined in
 
 **Cache** -- in-memory dict (`_retry_cache`) with 24-hour TTL, keyed by short UUIDs stored in button `custom_id`s. Stores `CachedCommandData` (for transform retries) and `CachedOutputData` (for output retries). See `doc/STATE.md` for design rationale.
 
+## Tracing
+
+Sentry tracing is a cross-cutting concern handled entirely by `utils/tracing.py`. No other module imports `sentry_sdk` directly (except `bot.py` for initialization). All tracing is a no-op when `SENTRY_DSN` is not configured.
+
+Three middleware/decorator points cover every interaction type:
+
+- **`SentryCommandTree`** -- custom `CommandTree` subclass that wraps every slash command and context menu invocation in a transaction. Automatic for all app commands.
+- **`@traced_modal_submit`** -- decorator for `Modal.on_submit` that continues the trace started by the originating command. Requires `propagate_trace_to_modal()` in the context menu handler to thread trace headers from command to modal.
+- **`@traced_callback`** -- decorator on the generic button callbacks (`ConfirmButton`, `RetryButton`, `OutputRetryButton`) that continues the trace from cached data.
+
+Distributed tracing across a full user session (command → modal → preview → retry → confirm) works because the Sentry trace ID is used as the cache key embedded in button `custom_id`s. When `cache_pipeline_data()` stores retry data, it also captures the current trace headers. When a button is clicked, the decorator reads those headers and continues the same trace.
+
 ## Pipeline example: create-issue
 
 ```

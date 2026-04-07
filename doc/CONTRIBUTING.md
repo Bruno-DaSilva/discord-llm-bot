@@ -25,7 +25,25 @@ Use `cogs/create_issue.py` as a reference implementation.
    - Defers interactions, fetches messages, and calls `pipeline.run()`
    - Cogs should contain no business logic
 
-4. **Load the Cog** in `bot.py`'s `setup_hook()`.
+4. **Wire tracing** (if your command uses modals). Slash commands and context menus are automatically traced by `SentryCommandTree` -- no action needed. If your command opens a modal from a context menu:
+
+   ```python
+   from src.utils.tracing import propagate_trace_to_modal, traced_modal_submit
+
+   # In the context menu handler:
+   modal = MyModal(message, cog=self)
+   propagate_trace_to_modal(modal, interaction, "my-command")
+   await interaction.response.send_modal(modal)
+
+   # On the modal class:
+   @traced_modal_submit
+   async def on_submit(self, interaction):
+       ...
+   ```
+
+   The generic buttons (`ConfirmButton`, `RetryButton`, etc.) are already traced via `@traced_callback`. `cache_pipeline_data()` automatically stores trace headers so button clicks continue the same trace. Never import `sentry_sdk` directly -- use `src/utils/tracing.py`.
+
+5. **Load the Cog** in `bot.py`'s `setup_hook()`.
 
 The generic buttons (`ConfirmButton`, `RetryButton`, etc.) handle the rest -- they dispatch to your handler based on `cmd_type`.
 
