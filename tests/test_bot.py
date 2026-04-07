@@ -5,6 +5,7 @@ import pytest
 
 from src.bot import create_bot, _read_required_env
 from src.cogs.ui import DeleteView
+from src.utils.sentry_tree import SentryCommandTree
 
 from tests.conftest import TEST_PRIVATE_KEY_PEM
 
@@ -48,6 +49,10 @@ class TestCreateBot:
     def test_has_message_content_intent(self, bot_kwargs):
         bot = create_bot(**bot_kwargs)
         assert bot.intents.message_content is True
+
+    def test_uses_sentry_command_tree(self, bot_kwargs):
+        bot = create_bot(**bot_kwargs)
+        assert isinstance(bot.tree, SentryCommandTree)
 
     @pytest.mark.asyncio
     async def test_setup_hook_loads_cog(self, bot_kwargs):

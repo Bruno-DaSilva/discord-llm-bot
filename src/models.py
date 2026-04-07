@@ -15,6 +15,7 @@ class CachedCommandData:
     cmd_type: str
     pipeline_data: PipelineData
     extra: dict[str, Any] = field(default_factory=dict)
+    trace_headers: dict[str, str] | None = None
 
 
 @dataclass
@@ -23,3 +24,4 @@ class CachedOutputData:
 
     cmd_type: str
     payload: dict[str, Any] = field(default_factory=dict)
+    trace_headers: dict[str, str] | None = None

@@ -13,6 +13,7 @@ from src.output.github import GitHubService
 from src.output.github_auth import GitHubAppAuth
 from src.pipeline.create_issue import IssuePipeline
 from src.transform.gemini import IssueGeneratorTransform
+from src.utils.sentry_tree import SentryCommandTree
 from src.cogs.ui import (
     CancelButton,
     ConfirmButton,
@@ -100,6 +101,7 @@ def create_bot(
         github_installation_id=github_installation_id,
         command_prefix="!",
         intents=intents,
+        tree_cls=SentryCommandTree,
     )
 
 
@@ -107,6 +109,19 @@ if __name__ == "__main__":
     from src.utils.logging_config import setup_logging
 
     setup_logging()
+
+    sentry_dsn = os.environ.get("SENTRY_DSN")
+    if sentry_dsn:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            # Add llm prompt input/outputs to traces
+            send_default_pii=True,
+            enable_logs=True,
+            traces_sample_rate=1.0,
+            # debug=True,
+        )
 
     bot = create_bot(
         gemini_api_key=_read_required_env("GEMINI_API_KEY"),
