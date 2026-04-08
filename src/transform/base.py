@@ -7,8 +7,16 @@ from src.models import PipelineData
 logger = logging.getLogger(__name__)
 
 
+_EXCLUDED_CONTEXT_KEYS = frozenset({"amendments"})
+
+
 def _flatten_context_messages(data: PipelineData) -> str:
-    return "\n".join(msg for msgs in data.context.values() for msg in msgs)
+    return "\n".join(
+        msg
+        for key, msgs in data.context.items()
+        if key not in _EXCLUDED_CONTEXT_KEYS
+        for msg in msgs
+    )
 
 
 class BaseLLMTransform(ABC):

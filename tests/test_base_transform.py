@@ -73,6 +73,15 @@ class TestBaseLLMTransform:
         assert "user1: broken" in prompt
         assert "user2: same" in prompt
 
+    def test_build_user_prompt_excludes_amendments(self):
+        t = StubTransform()
+        data = PipelineData(
+            input="topic",
+            context={"messages": ["msg1"], "amendments": ["do X"]},
+        )
+        prompt = t.build_user_prompt(data)
+        assert "do X" not in prompt
+
     def test_cannot_instantiate_without_call_llm(self):
         """ABC should prevent instantiation without implementing call_llm."""
 

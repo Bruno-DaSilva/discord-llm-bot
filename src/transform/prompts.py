@@ -1,4 +1,3 @@
-import logging
 ISSUE_GENERATOR_PROMPT = """
 <instructions>
 You are to take the contextual information provided to create a ticket title and description for our jira-like ticketing system.
@@ -69,8 +68,5 @@ def render_issue_prompt(
     if amendments:
         lines = "\n".join(f"- {a}" for a in amendments)
         prompt += f"\n<extra_instructions>\n{lines}\n</extra_instructions>\n"
-        logging.warning("adding amendments: {}".format(lines))
-    else:
-        logging.warning("added no amendments")
 
     return prompt
