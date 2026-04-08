@@ -198,6 +198,45 @@ class TestCreateIssueCog:
         assert call_kwargs["ephemeral"] is True
 
     @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
+    async def test_run_error_with_dm_target_sends_via_dm(self, mock_fetch, cog):
+        mock_fetch.side_effect = RuntimeError("API failure")
+        anchor = _mock_message()
+        interaction = _mock_interaction()
+        interaction.user.send = AsyncMock()
+        target = DmResponseTarget(interaction.user, interaction.channel_id)
+
+        await cog._run(
+            interaction, repo="owner/repo", focus="bug", n=5, anchor=anchor, target=target
+        )
+
+        interaction.user.send.assert_awaited_once()
+        embed = interaction.user.send.call_args.kwargs["embed"]
+        assert "API failure" in embed.description
+        interaction.followup.send.assert_awaited_once()
+        assert interaction.followup.send.call_args.kwargs["content"] == "Check your DMs for details."
+
+    @pytest.mark.asyncio
+    @patch("src.cogs.create_issue.fetch_messages_with_metadata")
+    async def test_run_error_with_dm_target_falls_back_on_forbidden(self, mock_fetch, cog):
+        mock_fetch.side_effect = RuntimeError("API failure")
+        anchor = _mock_message()
+        interaction = _mock_interaction()
+        interaction.user.send = AsyncMock(
+            side_effect=discord.Forbidden(MagicMock(status=403), "Cannot send")
+        )
+        target = DmResponseTarget(interaction.user, interaction.channel_id)
+
+        await cog._run(
+            interaction, repo="owner/repo", focus="bug", n=5, anchor=anchor, target=target
+        )
+
+        interaction.followup.send.assert_awaited_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert call_kwargs["ephemeral"] is True
+        assert "API failure" in call_kwargs["embed"].description
+
+    @pytest.mark.asyncio
     async def test_expired_interaction_is_ignored(self, cog):
         interaction = AsyncMock()
         interaction.response = AsyncMock()
@@ -253,16 +292,33 @@ class TestCreateIssueModal:
             assert mock_run.call_args.kwargs["n"] == 20
 
     @pytest.mark.asyncio
-    async def test_on_error_sends_ephemeral_error(self, cog):
+    async def test_on_error_sends_error_via_dm(self, cog):
         msg = _mock_message()
         modal = CreateIssueModal(msg, cog=cog)
         interaction = _mock_interaction()
+        interaction.user.send = AsyncMock()
         error = RuntimeError("something broke")
+        await modal.on_error(interaction, error)
+        interaction.user.send.assert_awaited_once()
+        embed = interaction.user.send.call_args.kwargs["embed"]
+        assert "something broke" in embed.description
+        interaction.followup.send.assert_awaited_once()
+        assert interaction.followup.send.call_args.kwargs["content"] == "Check your DMs for details."
+
+    @pytest.mark.asyncio
+    async def test_on_error_falls_back_to_ephemeral_on_forbidden(self, cog):
+        msg = _mock_message()
+        modal = CreateIssueModal(msg, cog=cog)
+        interaction = _mock_interaction()
+        interaction.user.send = AsyncMock(
+            side_effect=discord.Forbidden(MagicMock(status=403), "Cannot send")
+        )
+        error = RuntimeError("boom")
         await modal.on_error(interaction, error)
         interaction.followup.send.assert_awaited_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
         assert call_kwargs["ephemeral"] is True
-        assert "something broke" in call_kwargs["embed"].description
+        assert "boom" in call_kwargs["embed"].description
 
     @pytest.mark.asyncio
     async def test_on_error_defers_if_not_responded(self, cog):
@@ -270,6 +326,7 @@ class TestCreateIssueModal:
         modal = CreateIssueModal(msg, cog=cog)
         interaction = _mock_interaction()
         interaction.response.is_done = MagicMock(return_value=False)
+        interaction.user.send = AsyncMock()
         error = RuntimeError("boom")
         await modal.on_error(interaction, error)
         interaction.response.defer.assert_awaited_once_with(ephemeral=True)

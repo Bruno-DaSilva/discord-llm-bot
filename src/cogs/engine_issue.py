@@ -134,7 +134,16 @@ class EngineIssueCog(commands.Cog):
         except Exception as exc:
             logger.exception("engine-issue failed")
             embed = build_error_embed(exc)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            if isinstance(target, DmResponseTarget):
+                try:
+                    await interaction.user.send(embed=embed)
+                    await interaction.followup.send(
+                        content="Check your DMs for details.", ephemeral=True
+                    )
+                except discord.Forbidden:
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 # ------------------------------------------------------------------
@@ -166,7 +175,13 @@ class EngineIssueModal(discord.ui.Modal, title="Engine Issue"):
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
         embed = build_error_embed(error)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        try:
+            await interaction.user.send(embed=embed)
+            await interaction.followup.send(
+                content="Check your DMs for details.", ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @traced_modal_submit
     async def on_submit(self, interaction: discord.Interaction) -> None:
