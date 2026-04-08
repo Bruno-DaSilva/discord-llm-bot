@@ -59,7 +59,7 @@ Key risk areas include: nondeterministic ordering when userdata is used as a tab
 
 
 def render_issue_prompt(
-    focus: str, messages: str, *, amendments: list[str] = ()
+    focus: str, messages: str, *, amendments: list[str] = []
 ) -> str:
     prompt = ISSUE_GENERATOR_PROMPT.replace(
         "{{ context.ticket_focus }}", focus
