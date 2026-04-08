@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tests.prompt_eval.evaluators import Check, required_and, required_or, unwanted
+from tests.prompt_eval.evaluators import Check, required_and, unwanted
 
 CONVOS_DIR = Path(__file__).resolve().parents[3] / "convos"
 
