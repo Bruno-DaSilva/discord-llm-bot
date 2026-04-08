@@ -1,6 +1,11 @@
 """Unit tests for keyword evaluators — pure functions, no LLM needed."""
 
-from tests.prompt_eval.evaluators import check_required_keywords, check_unwanted_keywords
+from tests.prompt_eval.evaluators import (
+    check_required_keywords,
+    check_unwanted_keywords,
+    required,
+    unwanted,
+)
 
 
 class TestCheckUnwantedKeywords:
@@ -80,3 +85,43 @@ class TestCheckRequiredKeywords:
 
     def test_plain_string_still_works(self):
         assert check_required_keywords("hello world", ["hello"]) == []
+
+
+class TestUnwantedFactory:
+    def test_default_name(self):
+        check = unwanted("replay", "demo")
+        assert check.name == "unwanted_keywords"
+
+    def test_custom_name(self):
+        check = unwanted("backwards.?compat", name="no_backwards_compat")
+        assert check.name == "no_backwards_compat"
+
+    def test_evaluate_returns_violations(self):
+        check = unwanted("replay", "demo")
+        assert check.evaluate("send the replay file") == ["replay"]
+
+    def test_evaluate_returns_empty_on_pass(self):
+        check = unwanted("replay", "demo")
+        assert check.evaluate("fighters disappear at map edge") == []
+
+    def test_evaluate_multiple_violations(self):
+        check = unwanted("replay", "demo")
+        assert check.evaluate("send the replay demo") == ["replay", "demo"]
+
+
+class TestRequiredFactory:
+    def test_default_name(self):
+        check = required(r"###\s+Task")
+        assert check.name == "required_keywords"
+
+    def test_custom_name(self):
+        check = required(r"###\s+Task", name="section_headers")
+        assert check.name == "section_headers"
+
+    def test_evaluate_returns_empty_when_present(self):
+        check = required(r"###\s+Task", r"###\s+Context")
+        assert check.evaluate("### Task\ndo it\n### Context\nstuff") == []
+
+    def test_evaluate_returns_missing(self):
+        check = required(r"###\s+Task", r"###\s+Context")
+        assert check.evaluate("### Task\ndo it") == [r"###\s+Context"]
