@@ -1,9 +1,11 @@
 """Unit tests for keyword evaluators — pure functions, no LLM needed."""
 
 from tests.prompt_eval.evaluators import (
+    check_required_any_keywords,
     check_required_keywords,
     check_unwanted_keywords,
-    required,
+    required_and,
+    required_or,
     unwanted,
 )
 
@@ -111,17 +113,78 @@ class TestUnwantedFactory:
 
 class TestRequiredFactory:
     def test_default_name(self):
-        check = required(r"###\s+Task")
+        check = required_and(r"###\s+Task")
         assert check.name == "required_keywords"
 
     def test_custom_name(self):
-        check = required(r"###\s+Task", name="section_headers")
+        check = required_and(r"###\s+Task", name="section_headers")
         assert check.name == "section_headers"
 
     def test_evaluate_returns_empty_when_present(self):
-        check = required(r"###\s+Task", r"###\s+Context")
+        check = required_and(r"###\s+Task", r"###\s+Context")
         assert check.evaluate("### Task\ndo it\n### Context\nstuff") == []
 
     def test_evaluate_returns_missing(self):
-        check = required(r"###\s+Task", r"###\s+Context")
+        check = required_and(r"###\s+Task", r"###\s+Context")
         assert check.evaluate("### Task\ndo it") == [r"###\s+Context"]
+
+
+class TestCheckRequiredAnyKeywords:
+    def test_returns_empty_when_any_found(self):
+        assert check_required_any_keywords("Task section here", ["Task", "Missing"]) == []
+
+    def test_returns_empty_when_all_found(self):
+        assert check_required_any_keywords("Task and Context", ["Task", "Context"]) == []
+
+    def test_returns_all_when_none_found(self):
+        result = check_required_any_keywords("unrelated text", ["Task", "Context"])
+        assert result == ["Task", "Context"]
+
+    def test_empty_patterns(self):
+        assert check_required_any_keywords("any text", []) == []
+
+    def test_empty_text(self):
+        result = check_required_any_keywords("", ["something"])
+        assert result == ["something"]
+
+    def test_case_insensitive(self):
+        assert check_required_any_keywords("TASK section", ["task"]) == []
+
+    def test_regex_pattern(self):
+        assert check_required_any_keywords("backward compat", [r"backwards?\s*compat", "missing"]) == []
+
+
+class TestRequiredAndFactory:
+    def test_default_name(self):
+        check = required_and("a", "b")
+        assert check.name == "required_keywords"
+
+    def test_passes_when_all_present(self):
+        check = required_and("Task", "Context")
+        assert check.evaluate("Task and Context") == []
+
+    def test_fails_when_one_missing(self):
+        check = required_and("Task", "Context")
+        assert check.evaluate("Task only") == ["Context"]
+
+
+class TestRequiredOrFactory:
+    def test_default_name(self):
+        check = required_or("a", "b")
+        assert check.name == "required_any_keywords"
+
+    def test_custom_name(self):
+        check = required_or("a", name="my_check")
+        assert check.name == "my_check"
+
+    def test_passes_when_any_present(self):
+        check = required_or("Task", "Context")
+        assert check.evaluate("Task only") == []
+
+    def test_passes_when_all_present(self):
+        check = required_or("Task", "Context")
+        assert check.evaluate("Task and Context") == []
+
+    def test_fails_when_none_present(self):
+        check = required_or("Task", "Context")
+        assert check.evaluate("unrelated") == ["Task", "Context"]

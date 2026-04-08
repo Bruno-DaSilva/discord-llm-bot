@@ -1,7 +1,7 @@
 from google import genai
 
 from src.models import PipelineData
-from src.transform.base import BaseLLMTransform, _flatten_context_messages
+from src.transform.base import BaseLLMTransform
 from src.transform.prompts import ISSUE_GENERATOR_PROMPT, render_issue_prompt
 
 

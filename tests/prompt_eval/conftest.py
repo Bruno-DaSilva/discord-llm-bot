@@ -1,10 +1,16 @@
 import asyncio
 import os
+from pathlib import Path
 
 import pytest
 
+from src.config import load_extra_context
 from src.models import PipelineData
+from src.utils.repo import normalize_repo
 from tests.prompt_eval.providers import TestableIssueTransform, gemini_call
+
+_EXTRA_CONTEXT_PATH = Path(__file__).resolve().parents[2] / "config" / "extra_context.yaml"
+_extra_context = load_extra_context(_EXTRA_CONTEXT_PATH)
 
 PROVIDERS = {
     "gemini": gemini_call,
@@ -39,9 +45,14 @@ def provider():
 async def scenario_outputs(provider, scenario):
     """Generate LLM outputs once per scenario, cache for all checks."""
     if scenario.name not in _output_cache:
+        context: dict = {"messages": scenario.messages}
+        if scenario.repo:
+            amendments = _extra_context.get(normalize_repo(scenario.repo), [])
+            if amendments:
+                context["amendments"] = amendments
         data = PipelineData(
             input=scenario.focus,
-            context={"messages": scenario.messages},
+            context=context,
         )
         results = await asyncio.gather(*(provider.run(data) for _ in range(scenario.runs)))
         _output_cache[scenario.name] = [r.input for r in results]

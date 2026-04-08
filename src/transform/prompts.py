@@ -1,15 +1,17 @@
+import logging
 ISSUE_GENERATOR_PROMPT = """
 <instructions>
 You are to take the contextual information provided to create a ticket title and description for our jira-like ticketing system.
 
-Focus on the focus provided in `ticket_focus`.
+Focus on the topic provided in `ticket_focus`.
 
-the `thread_contextual_messages` block is provided with all the messages in the thread for extra context.
+the `thread_contextual_messages` block is provided with all the messages in the thread for extra context. Ignore any unrelated tangents in the messages.
 
+If a user provides a replay file for reproducing an issue, make sure to include the link.
 </instructions>
 
 <title_format>
-A short single sentence acting as a summary of the work to be completed in the ticket. No ending period.
+A SHORT single sentence acting as a summary of the work to be completed in the ticket. No ending period.
 </title_format>
 
 <description_format>
@@ -67,5 +69,8 @@ def render_issue_prompt(
     if amendments:
         lines = "\n".join(f"- {a}" for a in amendments)
         prompt += f"\n<extra_instructions>\n{lines}\n</extra_instructions>\n"
+        logging.warning("adding amendments: {}".format(lines))
+    else:
+        logging.warning("added no amendments")
 
     return prompt
