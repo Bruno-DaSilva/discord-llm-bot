@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import pytest
@@ -10,6 +11,7 @@ PROVIDERS = {
 }
 
 _output_cache: dict[str, list[str]] = {}
+_results: dict[tuple[str, str], tuple[int, int]] = {}
 
 
 def pytest_collection_modifyitems(config, items):
@@ -41,9 +43,40 @@ async def scenario_outputs(provider, scenario):
             input=scenario.focus,
             context={"messages": scenario.messages},
         )
-        outputs = []
-        for _ in range(scenario.runs):
-            result = await provider.run(data)
-            outputs.append(result.input)
-        _output_cache[scenario.name] = outputs
+        results = await asyncio.gather(*(provider.run(data) for _ in range(scenario.runs)))
+        _output_cache[scenario.name] = [r.input for r in results]
     return _output_cache[scenario.name]
+
+
+@pytest.fixture
+def prompt_eval_results():
+    return _results
+
+
+def pytest_terminal_summary(terminalreporter, config):
+    if not _results:
+        return
+
+    terminalreporter.section("Prompt Eval Results")
+
+    sc_w = max(len(sc) for sc, _ in _results)
+    ch_w = max(len(ch) for _, ch in _results)
+
+    header = (
+        f"{'Scenario':<{sc_w}}  "
+        f"{'Check':<{ch_w}}  "
+        f"{'Pass':>5}  "
+        f"{'Rate':>7}"
+    )
+    terminalreporter.line(header)
+    terminalreporter.line("-" * len(header))
+
+    for (scenario, check), (passed, total) in _results.items():
+        rate = (passed / total * 100) if total else 0
+        marker = " !" if passed < total else ""
+        terminalreporter.line(
+            f"{scenario:<{sc_w}}  "
+            f"{check:<{ch_w}}  "
+            f"{passed}/{total:>2}  "
+            f"{rate:>6.1f}%{marker}"
+        )

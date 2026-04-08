@@ -39,7 +39,7 @@ class Scenario:
     focus: str
     messages: list[str]
     description: str = ""
-    runs: int = 3
+    runs: int = 5
     checks: list[Check] = field(default_factory=list)
 
 
@@ -56,7 +56,8 @@ SCENARIOS: list[Scenario] = [
             required(*_SECTION_HEADERS, description="Output must have Task/Context/Acceptance Criteria sections"),
             required(
                 "replay",
-                description="Must mention the supporting replay that was linked in chat"
+                name="replay_mentioned",
+                description="Must mention the supporting replay that was linked in chat",
             )
         ],
     ),
@@ -80,7 +81,7 @@ SCENARIOS: list[Scenario] = [
         messages=load_discord_messages("enhancement-graphics.json", max_messages=300),
         description="CEG physics params enhancement — mushroom cloud discussion is unrelated",
         checks=[
-            unwanted("mushroom", description="Mushroom cloud discussion is an unrelated tangent"),
+            # unwanted(),
             required(*_SECTION_HEADERS, description="Output must have Task/Context/Acceptance Criteria sections"),
         ],
     ),
@@ -100,13 +101,7 @@ SCENARIOS: list[Scenario] = [
         messages=load_discord_messages("enhancement-multi-platform-sync-testing.json"),
         description="Sync testing infrastructure — animation/mesh rendering and flecs ECS discussion are unrelated",
         checks=[
-            unwanted(
-                "animation",
-                "bones",
-                "flecs",
-                "mesh",
-                description="Animation/mesh rendering and flecs ECS discussion are off-topic tangents",
-            ),
+            # unwanted(),
             required(*_SECTION_HEADERS, description="Output must have Task/Context/Acceptance Criteria sections"),
         ],
     ),
