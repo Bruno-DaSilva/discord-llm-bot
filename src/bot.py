@@ -7,6 +7,7 @@ import discord
 import httpx
 from discord.ext import commands
 
+from src.config import load_extra_context
 from src.cogs.create_issue import CreateIssueCog
 from src.cogs.engine_issue import EngineIssueCog
 from src.output.github import GitHubService
@@ -66,9 +67,16 @@ class IssueBot(commands.Bot):
 
         from google import genai
 
+        extra_context_path = Path(__file__).resolve().parent.parent / "config" / "extra_context.yaml"
+        extra_context = load_extra_context(extra_context_path)
+
         gemini_client = genai.Client(api_key=self.gemini_api_key)
         transform = IssueGeneratorTransform(client=gemini_client)
-        pipeline = IssuePipeline(transform=transform, github=self.github)
+        pipeline = IssuePipeline(
+            transform=transform,
+            github=self.github,
+            extra_context=extra_context,
+        )
 
         cog = CreateIssueCog(self, pipeline=pipeline)
         await self.add_cog(cog)

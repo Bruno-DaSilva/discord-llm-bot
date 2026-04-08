@@ -6,6 +6,7 @@ import pytest
 from src.bot import create_bot, _read_required_env
 from src.cogs.ui import DeleteView
 from src.utils.sentry_tree import SentryCommandTree
+from src.pipeline.create_issue import IssuePipeline
 
 from tests.conftest import TEST_PRIVATE_KEY_PEM
 
@@ -116,3 +117,26 @@ class TestCreateBot:
             assert hasattr(bot, "http_client")
             assert hasattr(bot, "github_auth")
             assert hasattr(bot, "github")
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_loads_extra_context(self, bot_kwargs):
+        bot = create_bot(**bot_kwargs)
+        amendments = {"owner/repo": ["Be concise"]}
+        with (
+            patch.object(bot, "add_cog", new_callable=AsyncMock) as mock_add,
+            patch.object(bot, "add_view"),
+            patch.object(bot, "add_dynamic_items"),
+            patch.object(bot.tree, "sync", new_callable=AsyncMock),
+            patch(
+                "src.bot.load_extra_context", return_value=amendments
+            ) as mock_load,
+        ):
+            await bot.setup_hook()
+            mock_load.assert_called_once()
+            # The pipeline passed to at least one cog should have amendments
+            for call in mock_add.call_args_list:
+                cog = call.args[0]
+                if hasattr(cog, "pipeline") and isinstance(cog.pipeline, IssuePipeline):
+                    assert cog.pipeline.extra_context == amendments
+                    return
+            pytest.fail("No cog received a pipeline with extra_context")

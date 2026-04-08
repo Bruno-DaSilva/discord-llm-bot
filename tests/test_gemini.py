@@ -56,6 +56,18 @@ class TestGeminiTransform:
         assert transform.build_system_prompt(data) == "Static prompt"
 
 
+    @pytest.mark.asyncio
+    async def test_call_llm_delegates_to_genai_client(self):
+        transform, mock_client = self._make_transform()
+        result = await transform.call_llm("system instructions", "user prompt")
+        assert result == "response text"
+        mock_client.aio.models.generate_content.assert_awaited_once()
+        call_kwargs = mock_client.aio.models.generate_content.call_args
+        assert call_kwargs.kwargs["model"] == "gemini-test-model"
+        assert call_kwargs.kwargs["contents"] == "user prompt"
+        assert call_kwargs.kwargs["config"]["system_instruction"] == "system instructions"
+
+
 class TestIssueGeneratorTransform:
     """Tests for the concrete issue-generation subclass."""
 
@@ -67,6 +79,27 @@ class TestIssueGeneratorTransform:
         transform = IssueGeneratorTransform(client=MagicMock())
         data = PipelineData(input="focus", context={"messages": ["msg"]})
         assert transform.build_user_prompt(data) == ""
+
+    def test_build_system_prompt_without_amendments(self):
+        transform = IssueGeneratorTransform(client=MagicMock())
+        data = PipelineData(input="topic", context={"messages": ["msg"]})
+        prompt = transform.build_system_prompt(data)
+        assert "topic" in prompt
+        assert "msg" in prompt
+        assert "<extra_instructions>" not in prompt
+
+    def test_build_system_prompt_with_amendments(self):
+        transform = IssueGeneratorTransform(client=MagicMock())
+        data = PipelineData(
+            input="topic",
+            context={
+                "messages": ["msg"],
+                "amendments": ["Focus on engine internals"],
+            },
+        )
+        prompt = transform.build_system_prompt(data)
+        assert "<extra_instructions>" in prompt
+        assert "- Focus on engine internals" in prompt
 
     @pytest.mark.asyncio
     async def test_full_round_trip(self):

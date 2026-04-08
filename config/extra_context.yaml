@@ -1,0 +1,13 @@
+# Per-repo prompt amendments
+# Each key is an "owner/repo" string, with a list of amendment strings
+# that get appended to the system prompt when generating issues for that repo.
+#
+# Example:
+# beyond-all-reason/recoilengine:
+#   - "Focus on engine internals and C++ implementation details"
+#   - "Reference the wiki for architecture context"
+beyond-all-reason/recoilengine:
+- "JUST FOR YOUR INFO: Recoil engine is an RTS game engine written in C++23 that supports large-scale RTS games, designed to handle thousands of units at once."
+- "JUST FOR YOUR INFO: Beyond all reason (BAR) is a game built on top of recoil engine, and is the main test case for the engine. The game has a lot of custom code that is not part of the engine."
+- "Mention this ONLY for unit-related engine performance improvements, never for anything else: The performance target for the engine is 10k units concurrently."
+- "Emphasize this ONLY for a significant refactor or enhancement of existing code, never for bugs: Backwards compatibility is extremely important to the engine, as there are many existing games built on the engine."

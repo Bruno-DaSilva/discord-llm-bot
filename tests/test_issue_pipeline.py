@@ -52,6 +52,58 @@ class TestBuildPipelineData:
         assert data.input == "focus"
         assert data.context["messages"] == []
 
+    def test_with_amendments(self, pipeline):
+        data = pipeline.build_pipeline_data(
+            "topic", ["msg"], amendments=["Focus on internals"]
+        )
+        assert data.context["amendments"] == ["Focus on internals"]
+
+    def test_without_amendments(self, pipeline):
+        data = pipeline.build_pipeline_data("topic", ["msg"])
+        assert "amendments" not in data.context
+
+    def test_empty_amendments_not_stored(self, pipeline):
+        data = pipeline.build_pipeline_data("topic", ["msg"], amendments=[])
+        assert "amendments" not in data.context
+
+
+class TestPromptAmendmentsLookup:
+    def test_run_passes_matching_amendments(self):
+        amendments = {"owner/repo": ["Be concise"]}
+        p = IssuePipeline(
+            transform=FakeTransform(),
+            github=FakeGitHubClient(),
+            extra_context=amendments,
+        )
+        data = p.build_pipeline_data("topic", ["msg"], amendments=amendments.get("owner/repo"))
+        assert data.context["amendments"] == ["Be concise"]
+
+    def test_run_no_matching_repo(self):
+        amendments = {"owner/other": ["Be concise"]}
+        p = IssuePipeline(
+            transform=FakeTransform(),
+            github=FakeGitHubClient(),
+            extra_context=amendments,
+        )
+        data = p.build_pipeline_data("topic", ["msg"], amendments=amendments.get("owner/repo"))
+        assert "amendments" not in data.context
+
+    def test_lookup_is_case_insensitive(self):
+        p = IssuePipeline(
+            transform=FakeTransform(),
+            github=FakeGitHubClient(),
+            extra_context={"owner/repo": ["Be concise"]},
+        )
+        assert p.extra_context.get("owner/repo") == ["Be concise"]
+
+    def test_lookup_ignores_trailing_slash(self):
+        p = IssuePipeline(
+            transform=FakeTransform(),
+            github=FakeGitHubClient(),
+            extra_context={"owner/repo": ["Be concise"]},
+        )
+        assert p.extra_context.get("owner/repo") == ["Be concise"]
+
 
 class TestBuildCachedData:
     def test_sets_all_fields(self, pipeline):
@@ -272,6 +324,20 @@ class TestRun:
         assert "not installed" in edit_kwargs["embed"].description.lower()
         assert "acme/widgets" in edit_kwargs["embed"].description
         mock_pipeline.transform.run.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_normalizes_repo_before_splitting(self, mock_pipeline):
+        interaction = _mock_interaction()
+        await mock_pipeline.run(
+            interaction,
+            repo="Owner/Repo/",
+            focus="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+        )
+        mock_pipeline.github.check_repo_installation.assert_awaited_once_with(
+            "owner", "repo"
+        )
 
     @pytest.mark.asyncio
     async def test_repo_installed_proceeds_to_transform(self, mock_pipeline):
