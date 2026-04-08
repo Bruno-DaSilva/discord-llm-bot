@@ -119,6 +119,7 @@ def mock_interaction():
     interaction.client.get_channel = MagicMock(return_value=AsyncMock())
     interaction.user = MagicMock()
     interaction.user.display_name = "TestUser"
+    interaction.extras = {}
     return interaction
 
 
