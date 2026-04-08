@@ -2,11 +2,14 @@ import os
 
 import pytest
 
+from src.models import PipelineData
 from tests.prompt_eval.providers import TestableIssueTransform, gemini_call
 
 PROVIDERS = {
     "gemini": gemini_call,
 }
+
+_output_cache: dict[str, list[str]] = {}
 
 
 def pytest_collection_modifyitems(config, items):
@@ -28,3 +31,19 @@ def provider():
     if call_fn is None:
         pytest.skip(f"Unknown LLM_PROVIDER: {provider_name}")
     return TestableIssueTransform(call_fn=call_fn)
+
+
+@pytest.fixture
+async def scenario_outputs(provider, scenario):
+    """Generate LLM outputs once per scenario, cache for all checks."""
+    if scenario.name not in _output_cache:
+        data = PipelineData(
+            input=scenario.focus,
+            context={"messages": scenario.messages},
+        )
+        outputs = []
+        for _ in range(scenario.runs):
+            result = await provider.run(data)
+            outputs.append(result.input)
+        _output_cache[scenario.name] = outputs
+    return _output_cache[scenario.name]

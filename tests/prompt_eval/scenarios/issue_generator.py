@@ -2,6 +2,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tests.prompt_eval.evaluators import Check, required, unwanted
+
 CONVOS_DIR = Path(__file__).resolve().parents[3] / "convos"
 
 
@@ -38,8 +40,7 @@ class Scenario:
     messages: list[str]
     description: str = ""
     runs: int = 3
-    unwanted_keywords: list[str] = field(default_factory=list)
-    required_keywords: list[str] = field(default_factory=list)
+    checks: list[Check] = field(default_factory=list)
 
 
 _SECTION_HEADERS = [r"###\s+Task", r"###\s+Context", r"###\s+Acceptance Criteria"]
@@ -49,40 +50,64 @@ SCENARIOS: list[Scenario] = [
         name="bug_fighters_out_of_map",
         focus="Fighter units traveling outside map boundaries and disappearing",
         messages=load_discord_messages("bug-fighters-out-of-map.json"),
-        description="Bug report about fighters escaping map bounds — replay file troubleshooting is unrelated",
-        unwanted_keywords=["replay", "demo"],
-        required_keywords=_SECTION_HEADERS,
+        description="Bug report about fighters escaping map bounds",
+        checks=[
+            # unwanted(),
+            required(*_SECTION_HEADERS, description="Output must have Task/Context/Acceptance Criteria sections"),
+            required(
+                "replay",
+                description="Must mention the supporting replay that was linked in chat"
+            )
+        ],
     ),
     Scenario(
         name="bug_qtpfs_assertions",
         focus="Fix Invalid QTPFS pathfinding assertions",
         messages=load_discord_messages("bug-QTPFS-assertions.json"),
         description="Pathfinding assertion bug — rendering circles and camera transitions are unrelated",
-        unwanted_keywords=["DrawGroundCircle", "camera"],
-        required_keywords=_SECTION_HEADERS,
+        checks=[
+            unwanted(
+                "DrawGroundCircle",
+                "camera",
+                description="Rendering circles and camera transitions are off-topic tangents",
+            ),
+            required(*_SECTION_HEADERS, description="Output must have Task/Context/Acceptance Criteria sections"),
+        ],
     ),
     Scenario(
         name="enhancement_graphics",
         focus="add physics params to the CBitmapMuzzleFlame CEG; float speed, float speedSpread, float airdrag, float3 gravity;",
         messages=load_discord_messages("enhancement-graphics.json", max_messages=300),
         description="CEG physics params enhancement — mushroom cloud discussion is unrelated",
-        unwanted_keywords=["mushroom"],
-        required_keywords=_SECTION_HEADERS,
+        checks=[
+            unwanted("mushroom", description="Mushroom cloud discussion is an unrelated tangent"),
+            required(*_SECTION_HEADERS, description="Output must have Task/Context/Acceptance Criteria sections"),
+        ],
     ),
     Scenario(
         name="enhancement_multi_unit_transport",
         focus="Multi-unit transport Lua implementation issues",
         messages=load_discord_messages("enhancement-multi-unit-transport.json"),
         description="Transport system enhancement — cloak/dgun mechanics tangent is unrelated",
-        unwanted_keywords=["cloak", "dgun"],
-        required_keywords=_SECTION_HEADERS,
+        checks=[
+            unwanted("cloak", "dgun", description="Cloak/dgun mechanics are off-topic tangents"),
+            required(*_SECTION_HEADERS, description="Output must have Task/Context/Acceptance Criteria sections"),
+        ],
     ),
     Scenario(
         name="enhancement_sync_testing",
         focus="Multi-platform sync testing (and also multi version)",
         messages=load_discord_messages("enhancement-multi-platform-sync-testing.json"),
         description="Sync testing infrastructure — animation/mesh rendering and flecs ECS discussion are unrelated",
-        unwanted_keywords=["animation", "bones", "flecs", "mesh"],
-        required_keywords=_SECTION_HEADERS,
+        checks=[
+            unwanted(
+                "animation",
+                "bones",
+                "flecs",
+                "mesh",
+                description="Animation/mesh rendering and flecs ECS discussion are off-topic tangents",
+            ),
+            required(*_SECTION_HEADERS, description="Output must have Task/Context/Acceptance Criteria sections"),
+        ],
     ),
 ]
