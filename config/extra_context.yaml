@@ -1,0 +1,13 @@
+# Per-repo prompt amendments
+# Each key is an "owner/repo" string, with a list of amendment strings
+# that get appended to the system prompt when generating issues for that repo.
+#
+# Example:
+# beyond-all-reason/recoilengine:
+#   - "Focus on engine internals and C++ implementation details"
+#   - "Reference the wiki for architecture context"
+beyond-all-reason/recoilengine:
+- Recoil engine is an RTS game engine written in C++23 that supports large-scale RTS games, designed to handle thousands of units at once.
+- Beyond all reason (BAR) is a game built on top of recoil engine, and is the main test case for the engine. The game has a lot of custom code that is not part of the engine.
+- The performance target for the engine is 10k units concurrently, but that includes buildings. Mobiles units tend to be about maybe 40% of the total unit count in late games.
+- Backwards compatibility is extremely important to the engine. Games running on the engine don't really have the time and effort available to adjust to impacts from engine changes (they're usually passion projects anyways).
