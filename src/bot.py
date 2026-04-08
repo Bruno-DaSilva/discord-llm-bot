@@ -124,6 +124,7 @@ if __name__ == "__main__":
 
         sentry_sdk.init(
             dsn=sentry_dsn,
+            environment=os.environ.get("SENTRY_ENV", "local"),
             # Add llm prompt input/outputs to traces
             send_default_pii=True,
             enable_logs=True,
