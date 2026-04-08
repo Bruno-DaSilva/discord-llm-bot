@@ -70,6 +70,11 @@ class TestLoadPromptAmendments:
         result = load_extra_context(path)
         assert "owner/repo" in result
 
+    def test_raises_on_non_string_key(self, tmp_yaml):
+        path = tmp_yaml("123:\n  - \"some context\"\n")
+        with pytest.raises(ValueError, match="key"):
+            load_extra_context(path)
+
     def test_keys_stripped_of_trailing_slashes(self, tmp_yaml):
         path = tmp_yaml('owner/repo/:\n  - "ctx"\n')
         result = load_extra_context(path)

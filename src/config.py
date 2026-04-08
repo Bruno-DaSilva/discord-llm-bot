@@ -22,6 +22,10 @@ def load_extra_context(path: Path) -> dict[str, list[str]]:
         raise ValueError(f"extra context: root must be a mapping, got {type(raw).__name__}")
 
     for key, value in raw.items():
+        if not isinstance(key, str):
+            raise ValueError(
+                f"extra context: key must be a string, got {type(key).__name__}"
+            )
         if not isinstance(value, list):
             raise ValueError(
                 f"extra context: value for '{key}' must be a list, got {type(value).__name__}"

@@ -326,6 +326,20 @@ class TestRun:
         mock_pipeline.transform.run.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_normalizes_repo_before_splitting(self, mock_pipeline):
+        interaction = _mock_interaction()
+        await mock_pipeline.run(
+            interaction,
+            repo="Owner/Repo/",
+            focus="bug",
+            messages=["user1: msg"],
+            latest_message_link=None,
+        )
+        mock_pipeline.github.check_repo_installation.assert_awaited_once_with(
+            "owner", "repo"
+        )
+
+    @pytest.mark.asyncio
     async def test_repo_installed_proceeds_to_transform(self, mock_pipeline):
         interaction = _mock_interaction()
         await mock_pipeline.run(

@@ -122,7 +122,8 @@ class IssuePipeline:
         if target is None:
             target = ResponseTarget()
 
-        amendments = self.extra_context.get(normalize_repo(repo), [])
+        repo = normalize_repo(repo)
+        amendments = self.extra_context.get(repo, [])
         data = self.build_pipeline_data(focus, messages, amendments=amendments)
 
         owner, repo_name = repo.split("/", 1)
